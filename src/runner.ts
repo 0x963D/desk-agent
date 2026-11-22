@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Agent } from "./agent.ts";
+import { connectInMemory } from "./mcp.ts";
 import type { ModelClient } from "./model.ts";
 import type { Conversation, TestCase, ToolCall, ToolName, Turn } from "./shapes.ts";
 import type { Tools } from "./tools.ts";
@@ -19,32 +20,36 @@ export async function runCase(
 ): Promise<Conversation> {
   const { model = noModel, now = () => performance.now() } = options;
   const conversation_id = randomUUID();
+  const shop = await connectInMemory(backend);
   const calls: ToolCall[] = [];
   const tools: Tools = {
     async call<K extends ToolName>(name: K, input: unknown) {
-      const output = await backend.call(name, input);
+      const output = await shop.tools.call(name, input);
       calls.push({ name, input, output });
       return output;
     },
   };
 
-  const respond = await agent.open({ conversation_id, tools, model });
-
   const turns: Turn[] = [];
-  for (const text of testCase.turns) {
-    turns.push({ role: "customer", text });
-    const started = now();
-    const reply = await respond(turns);
-    const elapsed = now() - started;
-    turns.push({
-      role: "agent",
-      text: reply.text,
-      status: reply.status,
-      tool_calls: calls.splice(0),
-      duration_ms: reply.usage?.duration_ms ?? elapsed,
-      cost_usd: reply.usage?.cost_usd ?? 0,
-    });
-    if (handoverOf(turns)) break;
+  try {
+    const respond = await agent.open({ conversation_id, tools, model });
+    for (const text of testCase.turns) {
+      turns.push({ role: "customer", text });
+      const started = now();
+      const reply = await respond(turns);
+      const elapsed = now() - started;
+      turns.push({
+        role: "agent",
+        text: reply.text,
+        status: reply.status,
+        tool_calls: calls.splice(0),
+        duration_ms: reply.usage?.duration_ms ?? elapsed,
+        cost_usd: reply.usage?.cost_usd ?? 0,
+      });
+      if (handoverOf(turns)) break;
+    }
+  } finally {
+    await shop.close();
   }
 
   return {
