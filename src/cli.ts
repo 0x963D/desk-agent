@@ -23,6 +23,7 @@ import { recordedModel, recordingDir, recordingPath, recordModel, type Recorder 
 import { writePacket } from "./packet.ts";
 import { README_END, README_START, readmeTable, reportTable, runsTable, type ReportRow } from "./report.ts";
 import { runCase } from "./runner.ts";
+import { writeSheet } from "./sheet.ts";
 import { Conversation, TestResult, type Split, type TestCase } from "./shapes.ts";
 import { spendCap, spendFile, spendGuard } from "./spend.ts";
 import { formatSummary, Summary, summarize } from "./summary.ts";
@@ -30,6 +31,7 @@ import { formatSummary, Summary, summarize } from "./summary.ts";
 const USAGE = [
   "usage: tune [--agent <name>] [--record] | score [--agent <name>] [--record] | regrade <run directory> | replay | report [--markdown] | report --runs [--markdown] | report --check-readme | chat [--agent <name>] [--replay <tuning case id>]",
   "       | audit-packet --out <dir> --key <file> [--seed <text>] | audit-agreement --key <file> [--partial] <verdict file>...",
+  "       | audit-sheet --packet <dir> --ids <file> --out <file.html>",
 ].join("\n");
 
 // The terminal `pnpm chat` talks through. Standard input is opened only when a live chat reads it.
@@ -254,6 +256,8 @@ export async function main(args: string[], root: string = process.cwd(), termina
         key: { type: "string" },
         seed: { type: "string" },
         partial: { type: "boolean" },
+        packet: { type: "string" },
+        ids: { type: "string" },
       },
       allowPositionals: true,
       strict: true,
@@ -274,6 +278,9 @@ export async function main(args: string[], root: string = process.cwd(), termina
   if (command === "audit-agreement" && values.key && rest.length > 0 && only("key", "partial")) {
     const files = rest.map((file) => resolve(root, file));
     return auditAgreement(root, resolve(root, values.key), files, { partial: values.partial ?? false });
+  }
+  if (command === "audit-sheet" && values.packet && values.ids && values.out && takes(0, "packet", "ids", "out")) {
+    return writeSheet(root, { packet: resolve(root, values.packet), ids: resolve(root, values.ids), out: resolve(root, values.out) });
   }
   if (command === "report" && values["check-readme"] && takes(0, "check-readme")) return checkReadme(root);
   if (command === "report" && values.runs && takes(0, "runs", "markdown")) return runsReport(root, values.markdown ?? false);

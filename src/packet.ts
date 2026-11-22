@@ -120,12 +120,12 @@ async function modelRuns(root: string): Promise<Source[]> {
   return sources;
 }
 
-const inside = (dir: string, path: string) => {
+export const inside = (dir: string, path: string) => {
   const rel = relative(dir, path);
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 };
 
-function ignoredByGit(root: string, path: string): boolean {
+export function ignoredByGit(root: string, path: string): boolean {
   try {
     execFileSync("git", ["check-ignore", "-q", relative(root, path)], { cwd: root, stdio: "ignore" });
     return true;
