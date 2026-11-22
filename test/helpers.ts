@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { Agent, AgentReply } from "../src/agent.ts";
 import { createBackend, type World } from "../src/backend.ts";
 import { loadShop, loadSplit } from "../src/files.ts";
+import type { ModelClient } from "../src/model.ts";
 import { TestCase, type Split } from "../src/shapes.ts";
 import type { Tools } from "../src/tools.ts";
 
@@ -41,17 +42,17 @@ export const request = (order_id: string, change: Record<string, unknown>) => ({
   change,
 });
 
-type Step = (tools: Tools) => AgentReply | Promise<AgentReply>;
+type Step = (tools: Tools, model: ModelClient) => AgentReply | Promise<AgentReply>;
 
 export function scripted(...steps: Step[]): Agent {
   return {
     name: "scripted",
-    open({ tools }) {
+    open({ tools, model }) {
       let next = 0;
       return async () => {
         const step = steps[next++];
         if (!step) throw new Error("the script has no reply for this turn");
-        return step(tools);
+        return step(tools, model);
       };
     },
   };

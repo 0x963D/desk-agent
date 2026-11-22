@@ -1,10 +1,11 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { expect, test } from "vitest";
-import type { Agent } from "../src/agent.ts";
+import type { Agent, AgentReply } from "../src/agent.ts";
 import { grade } from "../src/grade.ts";
 import { recordedModel, recordingPath, replayModel, type ModelCall, type ModelClient } from "../src/model.ts";
 import { runCase } from "../src/runner.ts";
+import type { AgentTurn } from "../src/shapes.ts";
 import { caseExpecting, tempDir, testBackend } from "./helpers.ts";
 
 const testCase = caseExpecting({ outcome: "resolved" });
@@ -18,15 +19,9 @@ const modelAgent = (steps: string[]): Agent => ({
   name: "model-backed",
   open({ model }) {
     return async () => {
-      const usage = { duration_ms: 0, cost_usd: 0 };
       let text = "";
-      for (const step of steps) {
-        const call = await model.complete({ step });
-        usage.duration_ms += call.duration_ms;
-        usage.cost_usd += call.cost_usd;
-        text = String(call.response);
-      }
-      return { text, status: "resolved", usage };
+      for (const step of steps) text = String((await model.complete({ step })).response);
+      return { text, status: "resolved" };
     };
   },
 });
@@ -41,6 +36,67 @@ test("time and cost captured in a recording reach the test result on replay", as
 
   expect(result.turn_ms).toEqual([1200]);
   expect(result.cost_usd).toBeCloseTo(0.003);
+});
+
+const recorded125: ModelCall[] = [
+  { request: { n: 1 }, response: "a", duration_ms: 125, cost_usd: 0.02 },
+  { request: { n: 2 }, response: "b", duration_ms: 125, cost_usd: 0.02 },
+];
+
+const callsTwice = (reply: object): Agent => ({
+  name: "model-backed",
+  open: ({ model }) => async () => {
+    await model.complete({ n: 1 });
+    await model.complete({ n: 2 });
+    return reply as AgentReply;
+  },
+});
+
+test.each([
+  ["reports nothing", { text: "Done.", status: "resolved" }],
+  ["claims it cost nothing", { text: "Done.", status: "resolved", usage: { duration_ms: 0, cost_usd: 0 } }],
+])("an agent that %s is charged the time and cost of the model calls it made in the turn", async (_, reply) => {
+  const conversation = await runCase(callsTwice(reply), testCase, await testBackend(), {
+    model: replayModel(recorded125),
+    now: () => 0,
+  });
+
+  expect(conversation.turns[1]).toMatchObject({ duration_ms: 250 });
+  expect((conversation.turns[1] as AgentTurn).cost_usd).toBeCloseTo(0.04);
+});
+
+test("model calls made while the agent opens count in its first turn", async () => {
+  const agent: Agent = {
+    name: "model-backed",
+    async open({ model }) {
+      await model.complete({ n: 1 });
+      return async () => {
+        await model.complete({ n: 2 });
+        return { text: "Done.", status: "resolved" };
+      };
+    },
+  };
+
+  const conversation = await runCase(agent, testCase, await testBackend(), { model: replayModel(recorded125) });
+
+  expect(conversation.turns[1]).toMatchObject({ duration_ms: 250 });
+});
+
+test("an agent that replies while a model call is still running stops the run", async () => {
+  const slow: ModelClient = {
+    complete: () => new Promise((settle) => setTimeout(() => settle({ response: "", duration_ms: 1, cost_usd: 1 }), 50)),
+  };
+  const agent: Agent = {
+    name: "model-backed",
+    open: ({ model }) => async () => {
+      void model.complete({});
+      return { text: "Done.", status: "resolved" };
+    },
+  };
+
+  await expect(runCase(agent, testCase, await testBackend(), { model: slow })).rejects.toThrow(
+    "a model call was still running",
+  );
 });
 
 test("the runner hands the agent the recording of its case, read from recordings/<agent>/<split>/<case id>.json", async () => {

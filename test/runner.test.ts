@@ -3,6 +3,7 @@ import type { Agent } from "../src/agent.ts";
 import { ruleBasedAgent } from "../src/agents/rule-based.ts";
 import { createBackend } from "../src/backend.ts";
 import { grade, passed } from "../src/grade.ts";
+import { replayModel } from "../src/model.ts";
 import { runCase } from "../src/runner.ts";
 import { Conversation } from "../src/shapes.ts";
 import type { Tools } from "../src/tools.ts";
@@ -10,17 +11,25 @@ import { caseExpecting, request, scripted, testBackend, testSplit, testWorld } f
 
 const resolved = { outcome: "resolved" };
 
-test("the trace holds every turn with its tool calls, time and cost", async () => {
+test("the trace holds every turn with its tool calls, and the time and cost of its model calls", async () => {
   const agent = scripted(
-    () => ({ text: "Which order?", status: "open", usage: { duration_ms: 900, cost_usd: 0.002 } }),
-    async (tools) => {
+    async (_, model) => {
+      await model.complete({ turn: 1 });
+      return { text: "Which order?", status: "open" };
+    },
+    async (tools, model) => {
+      await model.complete({ turn: 2 });
       await tools.call("lookup_order", { order_id: "SC-1999", email: "x@example.com" });
-      return { text: "Found nothing.", status: "refused", usage: { duration_ms: 1500, cost_usd: 0.004 } };
+      return { text: "Found nothing.", status: "refused" };
     },
   );
   const testCase = caseExpecting(resolved, { turns: ["Hi", "SC-1999"] });
+  const model = replayModel([
+    { request: { turn: 1 }, response: "", duration_ms: 900, cost_usd: 0.002 },
+    { request: { turn: 2 }, response: "", duration_ms: 1500, cost_usd: 0.004 },
+  ]);
 
-  const conversation = await runCase(agent, testCase, await testBackend());
+  const conversation = await runCase(agent, testCase, await testBackend(), { model });
 
   expect(conversation).toMatchObject({ case_id: "en-example", split: "tuning", agent: "scripted" });
   expect(conversation.turns).toEqual([
@@ -44,7 +53,7 @@ test("the trace holds every turn with its tool calls, time and cost", async () =
   ]);
 });
 
-test("an agent that reports no usage is timed by the runner and costs nothing", async () => {
+test("a turn that makes no model call is timed by the runner and costs nothing", async () => {
   const ticks = [1000, 1250];
   const agent = scripted(() => ({ text: "Done.", status: "resolved" }));
 

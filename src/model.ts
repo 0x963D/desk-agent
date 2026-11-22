@@ -36,7 +36,7 @@ export function recordModel(live: LiveModel, file: string, guard: SpendGuard): R
       await guard.add(cost_usd);
       const call = ModelCall.parse({ request: sent, response: snapshot(response), duration_ms, cost_usd });
       calls.push(call);
-      return call;
+      return snapshot(call);
     },
     save: () => writeJson(file, ModelCall.array(), calls),
   };

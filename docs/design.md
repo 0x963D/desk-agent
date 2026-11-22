@@ -195,12 +195,12 @@ Recordings live at `recordings/<agent>/<split>/<case id>.json`, one array of `Mo
 
 An agent in the registry may declare `liveModel`, a function that builds its live model client. The client answers `complete(request)` with the response and the cost of that call in US dollars, which the provider reports. The rule-based agent declares none, and `--record` refuses it before the run starts.
 
-With `--record`, the CLI builds the live client once per run and, for each conversation, wraps it with `recordModel` in `src/model.ts`. The agent receives the wrapper as `model` in `open`, so its code is the same for a live run and a replay. For each call the recorder:
+With `--record`, the CLI builds the live client once per run and, for each conversation, wraps it with `recordModel` in `src/model.ts`. The runner wraps it once more to measure each turn, and the agent receives that as `model` in `open`, so its code is the same for a live run and a replay. For each call the recorder:
 
 1. asks the spend guard whether a live call is allowed,
 2. copies the request, then times the live call with `performance.now()`,
 3. adds the reported cost to the running spend,
-4. keeps the call, with the copied request and response, the time and the cost.
+4. keeps the call, with the copied request and response, the time and the cost, and hands the agent a separate copy, so an agent that edits a response changes nothing in the recording.
 
 When the conversation ends, the CLI saves the calls in order to the conversation's recording path. A replay of that file gives the agent the same responses, times and costs, so it produces the same turns.
 
@@ -221,15 +221,19 @@ The spend guard in `src/spend.ts` keeps the running spend in `.artifacts/spend.j
 
 Time and cost live on the agent turn as `duration_ms` and `cost_usd`. A test result copies the turn times and sums the cost. The summary reads results only.
 
-- An agent that calls a model reports `usage` with its reply: the recorded time and cost of the model calls in that turn.
-- The runner's clock times an agent that reports no `usage`, and that turn costs nothing. The rule-based agent takes this path.
+The runner measures at the model boundary. It wraps the model client before it hands it to the agent, and the wrapper adds up the time and cost that each call returns: the measured time and the reported cost on a live call, the recorded ones on a replay. An agent reply holds only its text and its status, so an agent can neither report its own time and cost nor leave them out.
+
+- A turn that made a model call takes the sum of those calls. Calls made in `open` count in the first turn.
+- A turn that made no model call is timed by the runner's clock and costs nothing. The rule-based agent takes this path.
+- An agent that replies while a model call is still running stops the run, because that call's time and cost would land in no turn.
 
 | Alternative | Verdict | Why |
 | --- | --- | --- |
 | The runner's clock for every agent. | Rejected. | On replay a model call returns at once, so the clock would report a time near zero. |
 | Totals per conversation. | Rejected. | The summary needs the median and the 95th percentile of turns. |
 | The recorded time added to the runner's clock. | Rejected. | A replay would add the replay's own overhead, so a replay and the live run would report different times. |
-| The recorded time and cost, reported by the agent. | Chosen. | A live run and its replay add up the same recorded numbers. |
+| The recorded time and cost, reported by the agent. | Rejected. | An agent that left out `usage` reported two calls of 125 ms and $0.02 each as 0 ms and $0. |
+| The recorded time and cost, summed by the runner at the model client it hands the agent. | Chosen. | A live run and its replay add up the same recorded numbers, and the agent's code has no say in them. |
 
 ## Contested point 9: what a run leaves behind
 

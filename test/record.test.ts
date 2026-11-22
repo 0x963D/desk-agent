@@ -29,17 +29,14 @@ const chatAgent: Agent = {
     const messages: unknown[] = [];
     return async (history) => {
       messages.push(history.at(-1));
-      const usage = { duration_ms: 0, cost_usd: 0 };
       let text = "";
       for (const step of ["plan", "answer"]) {
         const call = await model.complete({ step, messages });
-        usage.duration_ms += call.duration_ms;
-        usage.cost_usd += call.cost_usd;
         text = (call.response as { text: string }).text;
         messages.push(call.response);
       }
       await tools.call("lookup_order", verified("SC-1003"));
-      return { text, status: "resolved", usage };
+      return { text, status: "resolved" };
     };
   },
 };
@@ -58,6 +55,18 @@ test("a recorded conversation replays to the same turns, time and cost", async (
   const agentTurns = live.turns.filter((turn) => turn.role === "agent");
   expect(agentTurns.map((turn) => turn.cost_usd)).toEqual([0.02, 0.02]);
   for (const turn of agentTurns) expect(turn.duration_ms).toBeGreaterThan(0);
+});
+
+test("an agent that edits a model response changes nothing in the recording", async () => {
+  const root = await tempDir();
+  const file = join(root, "recording.json");
+  const recorder = recordModel(fakeLive(), file, spendGuard(join(root, ".artifacts", "spend.json"), 50));
+
+  const call = await recorder.complete({ step: "one" });
+  (call.response as { text: string }).text = "edited";
+  await recorder.save();
+
+  expect(JSON.parse(await readFile(file, "utf8"))[0].response.text).toBe("reply 1 to 14 characters");
 });
 
 test("the recorder adds each call's reported cost to the running spend", async () => {
