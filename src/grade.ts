@@ -88,6 +88,9 @@ export function grade(testCase: TestCase, conversation: Conversation): TestResul
 
   const replies = agentTurns(turns);
   const said = replies.map((turn) => normalize(turn.text));
+  said.forEach((reply, at) => {
+    if (reply === "") failures.push({ kind: "empty_reply", detail: `reply ${at + 1}` });
+  });
   const mentioned = (phrase: string) => said.some((reply) => mentions(reply, normalize(phrase)));
   for (const phrase of expect.reply_mentions) {
     if (!mentioned(phrase)) failures.push({ kind: "missing_mention", detail: phrase });

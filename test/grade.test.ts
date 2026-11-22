@@ -200,3 +200,11 @@ test("a phrase split across two replies is not mentioned", async () => {
 
   expect(result.failures).toEqual([{ kind: "missing_mention", detail: "card only" }]);
 });
+
+test.each(["", "  \n "])("a reply with no text fails as an empty reply (%j)", async (text) => {
+  const result = await gradeRun(says(text), { outcome: "resolved" });
+
+  expect(result.failures).toEqual([{ kind: "empty_reply", detail: "reply 1" }]);
+  expect(passed(result)).toBe(false);
+  expect(tookWrongAction(result)).toBe(false);
+});

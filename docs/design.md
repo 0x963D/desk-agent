@@ -121,6 +121,8 @@ A case states the outcome, the requests on file at the end, and phrases that the
 
 A phrase matches inside one reply, and only where no letter or digit touches it on either side, so `SC-1329` is not found in `SC-13290`. A phrase check catches a verbatim disclosure. It does not catch a paraphrase or a rude tone.
 
+Every case also requires that each agent reply holds text. A reply that is empty or only spaces fails the case as `empty_reply`, which is not a wrong action. Without it, a blank `resolved` reply passed a shop question.
+
 ## Contested point 2: where the effects come from
 
 The filed requests and the handover are the accepted `file_request` and `hand_over` calls in the turns. The runner never reads the backend's own state.

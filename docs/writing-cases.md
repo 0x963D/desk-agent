@@ -57,6 +57,8 @@ A request names its `kind` and its `order_id`. The kinds are `cancellation`, `re
 
 A phrase matches when it appears inside one reply and no letter or digit touches it on either side, so `SC-1329` does not match `SC-13290`, and `card only` does not match `card` in one reply and `only` in the next. The comparison ignores capitals, diacritics and repeated spaces. Use a phrase only for a fact with one spelling, such as a tracking link, an order number or the number `14`. Do not use a phrase for a date, a status word or a sentence, because a correct agent can word those in many ways.
 
+Every case also requires that each agent reply holds text, so a case never states it.
+
 State what the customer and the shop can observe. Never state which functions the agent calls or in which order.
 
 ## Choose the expected outcome

@@ -248,6 +248,7 @@ export const Failure = z.strictObject({
     "unexpected_request",
     "missing_mention",
     "forbidden_mention",
+    "empty_reply",
   ]),
   detail: z.string(),
 });
