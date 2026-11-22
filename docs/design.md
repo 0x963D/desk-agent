@@ -17,13 +17,13 @@ Git ignores `traces/` and `.artifacts/`. A scoring run in `results/` and a recor
 
 ## Read the code in this order
 
-The source is about 1,400 lines in 17 files. `wc -l src/*.ts src/agents/*.ts` regenerates the count.
+The source is about 1,500 lines in 18 files. `wc -l src/*.ts src/agents/*.ts` regenerates the count.
 
 1. `src/shapes.ts` names every shape that crosses a file or a function boundary.
 2. `src/tools.ts` holds the five function contracts.
 3. `src/backend.ts` is the in-memory shop. It verifies the customer and enforces the policy.
 4. `src/mcp.ts` serves the backend as an MCP server and reads it back through an MCP client. It is also the stdio entry.
-5. `src/agent.ts` is the agent boundary. `src/model.ts` replays and records model calls, and `src/spend.ts` caps what a recording may spend.
+5. `src/agent.ts` is the agent boundary. `src/model.ts` replays and records model calls, and `src/spend.ts` caps what a recording may spend. `src/snapshot.ts` is the one deep copy that the backend, the runner and the recorder share.
 6. `src/runner.ts` plays one case through MCP and returns its conversation.
 7. `src/trace.ts` derives the effects and the outcome from a conversation.
 8. `src/grade.ts` compares a conversation with its case.
@@ -283,3 +283,6 @@ A summary needs one result for every case of its split. An interrupted run leave
 - A conversation that fails while recording leaves no recording. Its calls still count in the spend, and recording the case again pays for them again.
 - The CLI builds a live model client once per run, before the first case. A client that checks its provider key when it is built fails before anything is spent.
 - The held-out cases are in the public repository. Anyone who tunes an agent can read them.
+- Model calls that run at the same time in one turn add their times, so the turn time is their sum, not the time the customer waited.
+- No check catches a false promise in a reply, such as a refund the agent calls approved, unless the case names its exact words. That needs a model judge.
+- No check catches a handover made before the customer finished, because the runner stops at the handover and nothing reads what the customer still had to say. That needs a model judge.
