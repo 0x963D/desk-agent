@@ -174,6 +174,7 @@ test.each([
   [["report", "--agent", "rule-based"]],
   [["report", "results"]],
   [["tune", "--markdown"]],
+  [["replay", "--record"]],
   [[]],
 ])(
   "%j is refused with the usage line",
@@ -294,4 +295,17 @@ test("report on an empty ledger exits with a clear message", async () => {
   await expect(main(["report"], await testRepo())).rejects.toThrow(
     "no scoring run: results/ledger.jsonl holds no line. pnpm score records one.",
   );
+});
+
+test("replay runs the tuning set for every agent that can run offline and skips one without recordings", async () => {
+  const root = await testRepo();
+
+  const printed = await main(["replay"], root);
+
+  expect(printed).toContain("agent: rule-based");
+  expect(printed).toContain("tuning: 4 conversations");
+  for (const name of ["plain-gpt-6-luna", "plain-gpt-6.2-sol"]) {
+    expect(printed).toContain(`agent: ${name}\nskipped: recordings/${name}/tuning holds no recordings`);
+  }
+  expect(await readdir(join(root, "traces"))).toEqual(["rule-based"]);
 });

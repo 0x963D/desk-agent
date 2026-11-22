@@ -6,10 +6,10 @@ import { parseArgs } from "node:util";
 import type { Agent } from "./agent.ts";
 import { agents, DEFAULT_AGENT } from "./agents/index.ts";
 import { createBackend } from "./backend.ts";
-import { caseDir, loadSplit, readConversations, writeJson } from "./files.ts";
+import { caseDir, filesIn, loadSplit, readConversations, writeJson } from "./files.ts";
 import { grade, passed } from "./grade.ts";
 import { appendLedger, gitState, hashCaseFiles, ledgerFile, readLedger, type LedgerEntry } from "./ledger.ts";
-import { recordedModel, recordingPath, recordModel, type Recorder } from "./model.ts";
+import { recordedModel, recordingDir, recordingPath, recordModel, type Recorder } from "./model.ts";
 import { reportTable, type ReportRow } from "./report.ts";
 import { runCase } from "./runner.ts";
 import { Conversation, TestResult, type Split, type TestCase } from "./shapes.ts";
@@ -17,7 +17,7 @@ import { spendCap, spendFile, spendGuard } from "./spend.ts";
 import { formatSummary, Summary, summarize } from "./summary.ts";
 
 const USAGE =
-  "usage: tune [--agent <name>] [--record] | score [--agent <name>] [--record] | regrade <run directory> | report [--markdown]";
+  "usage: tune [--agent <name>] [--record] | score [--agent <name>] [--record] | regrade <run directory> | replay | report [--markdown]";
 
 type Graded = { results: TestResult[]; summary: Summary };
 
@@ -91,6 +91,27 @@ async function run(root: string, agent: Agent, split: Split, parent: string, rec
 async function save(dir: string, { results, summary }: Graded) {
   await writeJson(join(dir, "results.json"), TestResult.array(), results);
   await writeJson(join(dir, "summary.json"), Summary, summary);
+}
+
+async function tune(root: string, agent: Agent, record?: (file: string) => Recorder): Promise<string> {
+  const { dir, graded } = await run(root, agent, "tuning", join(root, "traces"), record);
+  await save(dir, graded);
+  return report(root, dir, graded);
+}
+
+async function replay(root: string): Promise<string> {
+  const reports: string[] = [];
+  for (const agent of agents.values()) {
+    const recordings = recordingDir(root, agent.name, "tuning");
+    if (agent.liveModel && (await filesIn(recordings, ".json")).length === 0) {
+      reports.push(
+        `agent: ${agent.name}\nskipped: ${shown(root, recordings)} holds no recordings, so its tuning set cannot be replayed offline. Recording one calls a paid provider and needs the maintainer's approval.`,
+      );
+      continue;
+    }
+    reports.push(await tune(root, agent));
+  }
+  return reports.join("\n\n");
 }
 
 async function regradeScored(root: string, cases: TestCase[], entry: LedgerEntry): Promise<void> {
@@ -181,6 +202,7 @@ export async function main(args: string[], root: string = process.cwd()): Promis
   if (command === "report" && bare(0)) return scoreReport(root, parsed.values.markdown ?? false);
   if (parsed.values.markdown !== undefined) throw new Error(USAGE);
   if (command === "regrade" && bare(1)) return regrade(root, resolve(root, rest[0]!));
+  if (command === "replay" && bare(0)) return replay(root);
   if ((command !== "tune" && command !== "score") || rest.length > 0) throw new Error(USAGE);
   const agent = agents.get(name);
   if (!agent) throw new Error(`no agent named ${name}. Agents: ${[...agents.keys()].join(", ")}`);
@@ -192,11 +214,7 @@ export async function main(args: string[], root: string = process.cwd()): Promis
     record = (file) => recordModel(live, file, guard);
   }
 
-  if (command === "tune") {
-    const { dir, graded } = await run(root, agent, "tuning", join(root, "traces"), record);
-    await save(dir, graded);
-    return report(root, dir, graded);
-  }
+  if (command === "tune") return tune(root, agent, record);
   const git = gitState(root);
   const cases_sha256 = await hashCaseFiles(root, "held-out");
   const { dir, graded } = await run(root, agent, "held-out", join(root, "results"), record);

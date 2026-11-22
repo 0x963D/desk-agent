@@ -55,8 +55,10 @@ export function replayModel(recorded: readonly ModelCall[]): ModelClient {
   };
 }
 
+export const recordingDir = (root: string, agent: string, split: Split) => join(root, "recordings", agent, split);
+
 export const recordingPath = (root: string, agent: string, split: Split, caseId: string) =>
-  join(root, "recordings", agent, split, `${caseId}.json`);
+  join(recordingDir(root, agent, split), `${caseId}.json`);
 
 export function recordedModel(file: string): ModelClient {
   let replay: Promise<ModelClient> | undefined;
