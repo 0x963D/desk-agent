@@ -117,7 +117,23 @@ test("--agent picks an agent from the registry and rejects a name it does not ho
   await expect(main(["tune", "--agent", "gpt"], root)).rejects.toThrow("no agent named gpt. Agents: rule-based");
 });
 
-test.each([[["tune", "held-out"]], [["tune", "--split=held-out"]], [["score", "tuning"]], [["regrade"]], [[]]])(
+test("--record refuses an agent that declares no live model client, before it runs", async () => {
+  const root = await testRepo();
+
+  await expect(main(["tune", "--record"], root)).rejects.toThrow(
+    "rule-based declares no live model client, so it has nothing to record",
+  );
+  await expect(readdir(join(root, "traces"))).rejects.toThrow();
+});
+
+test.each([
+  [["tune", "held-out"]],
+  [["tune", "--split=held-out"]],
+  [["score", "tuning"]],
+  [["regrade"]],
+  [["regrade", "traces/rule-based/run", "--record"]],
+  [[]],
+])(
   "%j is refused with the usage line",
   async (args) => {
     await expect(main(args, await testRepo())).rejects.toThrow("usage:");
