@@ -324,6 +324,13 @@ The ids and the order come from SHA-256 of the seed and a counter, so `--seed` r
 
 `--partial` lets a verdict file judge only some of the key's conversations, such as a hand-checked sample. That reader is compared with the grader on the conversations it judged and with each other reader on the conversations both judged, and each of its headings says how many, such as `reader human, on 18 of 108 conversations`. Without the flag a file that misses a conversation is rejected, so a reader who skipped one by mistake is caught.
 
+`pnpm audit:sheet --packet <dir> --ids <file> --out <file.html>` turns some of a packet's conversations into one page that a person labels in a browser. The ids file lists one id per line, in the order the page shows them. The command reads each conversation back from its packet file, so the page shows only what a packet reader sees, and it reads the seven criteria and their tests from the packet's `judging.md`. Each conversation shows as a chat with its function calls folded, then the handover, then the verdict form. The rubric and the scope sit behind a Rules button. The page keeps the answers in the browser's local storage and downloads `human.jsonl`, one verdict line per finished conversation, which `pnpm audit:agreement --partial` reads. Its content security policy allows no request, so the page works offline and sends nothing. The script that turns answers into verdict lines is `src/sheet-page.js`, and a test runs it in Node and loads its output with the same parser as any verdict file.
+
+| Alternative | Verdict | Why |
+| --- | --- | --- |
+| Build the page from the saved runs and the key. | Rejected. | The key names the agent and the case. Reading the packet keeps the page exactly as blind as the packet. |
+| Let the reader fill `verdicts.jsonl` by hand. | Rejected for a hand-checked sample. | Typing nine fields per line is slow and error-prone, and the loader would reject a typo only at the end. |
+
 | Alternative | Verdict | Why |
 | --- | --- | --- |
 | Show the agent's declared status. | Rejected. | It is the agent's own claim of the outcome and anchors the reader. The customer never sees it. |
