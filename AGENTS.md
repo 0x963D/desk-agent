@@ -5,5 +5,5 @@
 - Keep secrets in `.env` (ignored). Keep personal data out of fixtures, logs and traces. Fixtures are fictional or anonymised.
 - Calls to paid model, speech or telephony providers need the maintainer's approval with an estimated cost first. Tests run offline against recorded responses by default.
 - Private planning material lives outside this repository. Never copy it in.
-- CI is described in `.agents/ci-profile.md`. Every CI change follows the ci-cd skill, which reads that profile.
+- CI is described in `.agents/ci-profile.md`. Keep a CI change within what that file allows, and update the file with it.
 - Verify with `.agents/skills/verify-desk-agent/SKILL.md` before handing off a change, once that skill exists.
