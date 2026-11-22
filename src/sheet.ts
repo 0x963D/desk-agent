@@ -46,7 +46,8 @@ export function parseConversation(text: string, file: string): ShownConversation
 
   const [id] = take(/^# Conversation (\S+)$/, "the conversation heading");
   const turns: ShownTurn[] = [];
-  for (let head = /^## Turn (\d+), (customer|agent)$/.exec(blocks[at] ?? ""); head; head = /^## Turn (\d+), (customer|agent)$/.exec(blocks[at] ?? "")) {
+  const turnHeading = () => /^## Turn (\d+), (customer|agent)$/.exec(blocks[at] ?? "");
+  for (let head = turnHeading(); head; head = turnHeading()) {
     at++;
     const number = Number(head[1]);
     if (head[2] === "customer") {
