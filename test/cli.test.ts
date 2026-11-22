@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
@@ -5,7 +6,7 @@ import { main } from "../src/cli.ts";
 import { readJson } from "../src/files.ts";
 import { hashCaseFiles, hashCodeAt, LedgerEntry } from "../src/ledger.ts";
 import { TestResult } from "../src/shapes.ts";
-import { commitAll, testRepo } from "./helpers.ts";
+import { commitAll, tempDir, testRepo } from "./helpers.ts";
 
 const runDirs = (root: string, base: string) => readdir(join(root, base, "rule-based"));
 
@@ -385,6 +386,59 @@ test("a line without a code hash stands alone until pnpm ledger:code gives it on
   const codeFile = join(root, "results", "ledger-code.json");
   await writeFile(codeFile, (await readFile(codeFile, "utf8")).replace(lines[0]!.code_sha256!, "0".repeat(64)));
   await expect(main(["ledger-code"], root)).rejects.toThrow(/gives .* the code hash 0{64}, but its commit/);
+});
+
+async function repoWithOldLedger() {
+  const { root } = await scoredRepo();
+  const [entry] = await ledger(root);
+  const { code_sha256, ...old } = entry!;
+  const line = `${JSON.stringify(old)}\n`;
+  await writeFile(join(root, "results", "ledger.jsonl"), line);
+  return { root, original: old.commit, line };
+}
+
+const git = (root: string, ...args: string[]) =>
+  execFileSync("git", args, { cwd: root, stdio: ["ignore", "pipe", "pipe"] }).toString().trim();
+
+test("ledger:code and both report tables resolve a ledger commit after a history rewrite", async () => {
+  const { root, original, line } = await repoWithOldLedger();
+  await main(["ledger-code"], root);
+  const hashes = await readFile(join(root, "results", "ledger-code.json"), "utf8");
+  git(root, "-c", "user.name=Test", "-c", "user.email=public@example.com", "commit", "--amend", "--reset-author", "-qm", "rewritten cases");
+  const rewritten = git(root, "rev-parse", "HEAD");
+  expect(rewritten).not.toBe(original);
+  await writeFile(join(root, "results", "commit-map.json"), JSON.stringify({ [original]: rewritten }));
+  commitAll(root);
+  const clone = await tempDir();
+  git(root, "clone", "--no-local", "--quiet", "-c", "core.autocrlf=false", root, clone);
+  expect(() => git(clone, "cat-file", "-e", original)).toThrow();
+
+  await expect(main(["ledger-code"], clone)).resolves.toBe("results/ledger-code.json: 0 lines added, 1 checked against Git");
+  const [row] = await reportRows(clone);
+  expect(row?.at(-2)).toBe(rewritten.slice(0, 7));
+  const runs = await main(["report", "--runs", "--markdown"], clone);
+  expect(runs.split("\n")[2]?.split(" | ")[3]).toBe(rewritten.slice(0, 7));
+  expect(await readFile(join(clone, "results", "ledger.jsonl"), "utf8")).toBe(line);
+  expect(await readFile(join(clone, "results", "ledger-code.json"), "utf8")).toBe(hashes);
+});
+
+test.each(["missing object", "tree"] as const)("ledger:code names both IDs when a commit map points to a %s", async (kind) => {
+  const { root, original } = await repoWithOldLedger();
+  const target = kind === "tree" ? git(root, "rev-parse", "HEAD^{tree}") : "0".repeat(40);
+  await writeFile(join(root, "results", "commit-map.json"), JSON.stringify({ [original]: target }));
+
+  await expect(main(["ledger-code"], root)).rejects.toThrow(
+    `results/commit-map.json: ledger commit ${original} resolves to ${target}, which is not a commit in this checkout`,
+  );
+});
+
+test.each(["key", "value"] as const)("report rejects a commit map with an invalid %s", async (field) => {
+  const { root, original } = await repoWithOldLedger();
+  const [key, value] = field === "key" ? ["short", original] : [original, "short"];
+  const file = join(root, "results", "commit-map.json");
+  await writeFile(file, JSON.stringify({ [key]: value }));
+
+  await expect(main(["report", "--runs"], root)).rejects.toThrow(file);
 });
 
 test("report stops when a regraded run disagrees with its ledger line", async () => {

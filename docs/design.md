@@ -310,6 +310,8 @@ The nine lines written before the field cannot be rewritten. `pnpm ledger:code` 
 
 On the current ledger the seven lines from `2d848d8` to `72d7b66` share one code hash, because the commits between them changed only `results/`. The two earlier rule-based lines each have their own, so the rule-based row covers its latest run alone.
 
+Ledger lines are evidence and are never edited. A history rewrite changes commit IDs, so `results/commit-map.json` maps original full IDs to rewritten full IDs. `pnpm ledger:code` uses the mapped IDs to read from Git, and `pnpm report` uses them in its commit columns. When no mapping exists for a commit, both commands use the ID recorded in the ledger.
+
 | Alternative | Verdict | Why |
 | --- | --- | --- |
 | The commit. | Rejected. | Every score commits its results, so each of the nine runs sits at its own commit, and no row would ever cover two runs. |
@@ -317,7 +319,7 @@ On the current ledger the seven lines from `2d848d8` to `72d7b66` share one code
 | Hash only the files a scored run imports. | Rejected. | It follows the import graph, which moves as the code does. Hashing all of `src/` costs at most a row that starts again after a change to a file a run does not use, such as `src/report.ts`. That shows fewer runs, never a wrong number. |
 | A content hash of the code, recorded by score and computed once from Git for older lines. | Chosen. | Two runs share a row only when the files that decide them are byte for byte the same, whatever else changed between their commits, and the check needs no Git where it runs. |
 
-`pnpm report --runs` prints one row for every line of the ledger, oldest first: the agent, the set, the time, the commit, whether the tree was dirty, the first 12 characters of the cases hash and of the code hash, and the counts of the summary. It reads the ledger and `results/ledger-code.json` only, so it works where the saved runs are absent, and a change of hash between two rows shows that the cases or the code changed between those scores. `--markdown` prints it as Markdown.
+`pnpm report --runs` prints one row for every line of the ledger, oldest first: the agent, the set, the time, the commit, whether the tree was dirty, the first 12 characters of the cases hash and of the code hash, and the counts of the summary. It reads the ledger, `results/ledger-code.json`, and `results/commit-map.json`, so it works where the saved runs are absent, and a change of hash between two rows shows that the cases or the code changed between those scores. `--markdown` prints it as Markdown.
 
 README.md shows the `pnpm report --markdown` table between the lines `<!-- report table: start -->` and `<!-- report table: end -->`. `pnpm report --check-readme` builds the report as `pnpm report --markdown` does, regrading the latest runs, and fails when the lines between the markers differ from it. The error names the first line that differs. A new score makes the table stale, and so does a hand edit or a grader change that moves a number. `pnpm check` runs it last, so the container check fails until the README shows the current numbers.
 

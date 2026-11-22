@@ -17,8 +17,10 @@ import {
   hashCaseFiles,
   hashCode,
   ledgerFile,
+  readCommitMap,
   readLedger,
   readLedgerCode,
+  resolveLedgerCommit,
   scoredRunDir,
   writeLedgerCode,
   type LedgerEntry,
@@ -187,7 +189,7 @@ async function scoreReport(root: string, markdown: boolean): Promise<string> {
   if (ledger.length === 0) {
     throw new Error(`no scoring run: ${shown(root, ledgerFile(root))} holds no line. pnpm score records one.`);
   }
-  const code = await readLedgerCode(root);
+  const [code, commitMap] = await Promise.all([readLedgerCode(root), readCommitMap(root)]);
   const tables: string[] = [];
   for (const set of REPORTED_SETS) {
     const scored = ledger.filter((entry) => entry.summary.split === set);
@@ -211,7 +213,8 @@ async function scoreReport(root: string, markdown: boolean): Promise<string> {
         turn_ms: results.flatMap((result) => result.turn_ms).sort((a, b) => a - b),
         cost_usd: results.reduce((total, result) => total + result.cost_usd, 0),
         code: latestCode,
-        latest,
+        commit: resolveLedgerCommit(latest, commitMap),
+        dirty: latest.dirty,
         scored: lines.length,
       });
     }
@@ -225,9 +228,9 @@ async function runsReport(root: string, markdown: boolean): Promise<string> {
   if (ledger.length === 0) {
     throw new Error(`no scoring run: ${shown(root, ledgerFile(root))} holds no line. pnpm score records one.`);
   }
-  const code = await readLedgerCode(root);
+  const [code, commitMap] = await Promise.all([readLedgerCode(root), readCommitMap(root)]);
   return runsTable(
-    ledger.map((entry) => ({ entry, code: codeOf(entry, code) })),
+    ledger.map((entry) => ({ entry, code: codeOf(entry, code), commit: resolveLedgerCommit(entry, commitMap) })),
     { markdown },
   );
 }

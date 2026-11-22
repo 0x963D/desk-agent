@@ -103,6 +103,18 @@ export async function appendLedger(root: string, entry: LedgerEntry): Promise<vo
   await appendFile(file, `${JSON.stringify(LedgerEntry.parse(entry))}\n`);
 }
 
+const CommitId = z.string().regex(/^[0-9a-f]{40}$/i).toLowerCase();
+const CommitMap = z.record(CommitId, CommitId);
+type CommitMap = z.infer<typeof CommitMap>;
+const commitMapPath = "results/commit-map.json";
+
+export const readCommitMap = (root: string): Promise<CommitMap> =>
+  unlessMissing(readJson(join(root, commitMapPath), CommitMap), {});
+
+export function resolveLedgerCommit(entry: LedgerEntry, commitMap: CommitMap): string {
+  return commitMap[entry.commit.toLowerCase()] ?? entry.commit;
+}
+
 // The code hash of each ledger line written before score recorded one, keyed by the line's run.
 // `pnpm ledger:code` writes it from Git once, so the report needs no Git history to read it.
 const LedgerCode = z.record(z.string(), z.string().regex(/^[0-9a-f]{64}$/));
@@ -120,15 +132,26 @@ export const codeOf = (entry: LedgerEntry, code: LedgerCode): string | undefined
 // there against Git. A dirty line is left unknown, because its commit does not hold what ran.
 export async function writeLedgerCode(root: string): Promise<string> {
   gitState(root);
-  const known = await readLedgerCode(root);
+  const [known, commitMap] = await Promise.all([readLedgerCode(root), readCommitMap(root)]);
+  const hasCommitMap = Object.keys(commitMap).length > 0;
   const code: LedgerCode = {};
   let added = 0;
   for (const entry of await readLedger(root)) {
     if (entry.code_sha256 !== undefined || entry.dirty) continue;
-    const hash = hashCodeAt(root, entry.commit, entry.summary.split);
+    const commit = resolveLedgerCommit(entry, commitMap);
+    if (hasCommitMap) {
+      try {
+        if (git(root, ["cat-file", "-t", commit]).toString("utf8").trim() !== "commit") {
+          throw new Error(`Git object ${commit} is not a commit`);
+        }
+      } catch (cause) {
+        throw new Error(`${commitMapPath}: ledger commit ${entry.commit} resolves to ${commit}, which is not a commit in this checkout`, { cause });
+      }
+    }
+    const hash = hashCodeAt(root, commit, entry.summary.split);
     const before = known[entry.run];
     if (before !== undefined && before !== hash) {
-      throw new Error(`${fromRoot(root, ledgerCodeFile(root))} gives ${entry.run} the code hash ${before}, but its commit ${entry.commit} hashes to ${hash}`);
+      throw new Error(`${fromRoot(root, ledgerCodeFile(root))} gives ${entry.run} the code hash ${before}, but its commit ${commit} hashes to ${hash}`);
     }
     if (before === undefined) added++;
     code[entry.run] = hash;
