@@ -256,7 +256,7 @@ A summary needs one result for every case of its split. An interrupted run leave
 
 ## Contested point 10: how the agent is chosen
 
-`src/agents/index.ts` holds a registry keyed by agent name. `--agent <name>` picks one, and the default is `rule-based`, the only entry today. The registry is a plain object, so adding an agent is one line.
+`src/agents/index.ts` holds a registry keyed by agent name. `--agent <name>` picks one, and the default is `rule-based`, the only entry today. Adding an agent is one entry in its list. The registry is a `Map`, not a plain object, because a plain object answers inherited names: `tune --agent constructor` found `Object` and crashed inside the run. A name that is not in the map is refused before a run directory exists.
 
 `pnpm tune` and `pnpm score` take no split. Each command maps to one split, and the loader reads one folder. A case whose `split` differs from its folder fails the load, so a held-out case moved into `cases/tuning` cannot run as tuning.
 

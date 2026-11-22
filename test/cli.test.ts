@@ -146,6 +146,16 @@ test("--agent picks an agent from the registry and rejects a name it does not ho
   await expect(main(["tune", "--agent", "gpt"], root)).rejects.toThrow("no agent named gpt. Agents: rule-based");
 });
 
+test.each(["constructor", "toString", "__proto__", "hasOwnProperty"])(
+  "--agent %s is refused before a run directory is created",
+  async (name) => {
+    const root = await testRepo();
+
+    await expect(main(["tune", "--agent", name], root)).rejects.toThrow(`no agent named ${name}. Agents: rule-based`);
+    await expect(readdir(join(root, "traces"))).rejects.toThrow();
+  },
+);
+
 test("--record refuses an agent that declares no live model client, before it runs", async () => {
   const root = await testRepo();
 

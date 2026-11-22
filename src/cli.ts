@@ -129,8 +129,8 @@ export async function main(args: string[], root: string = process.cwd()): Promis
     return regrade(root, resolve(root, rest[0]!));
   }
   if ((command !== "tune" && command !== "score") || rest.length > 0) throw new Error(USAGE);
-  const agent = agents[name];
-  if (!agent) throw new Error(`no agent named ${name}. Agents: ${Object.keys(agents).join(", ")}`);
+  const agent = agents.get(name);
+  if (!agent) throw new Error(`no agent named ${name}. Agents: ${[...agents.keys()].join(", ")}`);
   let record: ((file: string) => Recorder) | undefined;
   if (parsed.values.record) {
     if (!agent.liveModel) throw new Error(`${agent.name} declares no live model client, so it has nothing to record`);
