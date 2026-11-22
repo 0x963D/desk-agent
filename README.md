@@ -116,7 +116,7 @@ These are the weak spots, stated before a reader finds them.
 - **The language check passes what it cannot read.** A short reply or a mixed one counts as unsure and never fails.
 - **No function amends a filed request,** and an order shows no earlier claim, so a wish the customer adds after a claim is filed needs a person.
 - **Log redaction is by pattern.** It masks emails, phone, card and IBAN numbers and street addresses, but not names.
-- **The agent framework comparison is not done.** Plain function calling was chosen because it keeps the recorded requests plain JSON, not because it beat a framework on a measured run.
+- **The agent framework comparison is not done.** Plain function calling was chosen because it keeps the recorded requests plain JSON, not because it beat a framework on a measured run. The `sdk-*` agents run one AI SDK loop on two GPT models and two price-matched Claude models, recorded at the wire like the plain agent, but none has recordings or scores yet.
 
 ## Run it
 

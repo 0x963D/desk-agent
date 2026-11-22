@@ -56,6 +56,13 @@ export function costOf(model: AnthropicModel, usage: Usage): number {
 
 const ApiError = z.looseObject({ error: z.looseObject({ message: z.string() }) });
 
+// The headers the AI SDK's Anthropic provider asks for. The SDK agent's fetch checks each
+// request against them, so a provider upgrade that asks for others fails offline, not live.
+export const ANTHROPIC_HEADERS = {
+  "anthropic-version": "2023-06-01",
+  "anthropic-beta": "structured-outputs-2025-11-13",
+} as const;
+
 export function anthropicModel(model: AnthropicModel): LiveModel {
   const key = process.env.ANTHROPIC_API_KEY?.trim();
   if (!key) throw new Error("ANTHROPIC_API_KEY is not set, in the environment or in .env, so no live call was made.");
@@ -63,7 +70,7 @@ export function anthropicModel(model: AnthropicModel): LiveModel {
     async complete(request) {
       const answer = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
-        headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+        headers: { "x-api-key": key, ...ANTHROPIC_HEADERS, "content-type": "application/json" },
         body: JSON.stringify(request),
       });
       const body: unknown = await answer.json();

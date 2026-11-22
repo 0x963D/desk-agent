@@ -28,7 +28,12 @@ test("the live client posts the Messages body as given and prices each usage cat
     "https://api.anthropic.com/v1/messages",
     {
       method: "POST",
-      headers: { "x-api-key": "test-key", "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      headers: {
+        "x-api-key": "test-key",
+        "anthropic-version": "2023-06-01",
+        "anthropic-beta": "structured-outputs-2025-11-13",
+        "content-type": "application/json",
+      },
       body: JSON.stringify(request),
     },
   );

@@ -6,7 +6,7 @@ import type { Agent } from "../agent.ts";
 import { toolDefinitions } from "../mcp.ts";
 import { ToolName } from "../shapes.ts";
 import { contracts } from "../tools.ts";
-import { anthropicModel, type AnthropicModel } from "./anthropic.ts";
+import { ANTHROPIC_HEADERS, anthropicModel, type AnthropicModel } from "./anthropic.ts";
 import { openaiModel, type OpenAIModel } from "./openai.ts";
 import { MAX_ROUNDS } from "./plain.ts";
 import { SYSTEM_PROMPT } from "./prompt.ts";
@@ -40,6 +40,22 @@ const shopTools = Object.fromEntries(toolDefinitions.map(({ name, description, i
   }];
 })) satisfies ToolSet;
 
+// Headers every request carries that the live clients set themselves or that change nothing.
+const TRANSPORT_HEADERS = new Set(["authorization", "x-api-key", "content-type", "user-agent"]);
+
+// The live clients send only the request body and their own fixed headers. A header the SDK
+// asks for beyond those would be dropped on a live call, so it fails here, offline, instead.
+function checkHeaders(provider: Model["provider"], init: RequestInit | undefined) {
+  const expected: Record<string, string> = provider === "anthropic" ? ANTHROPIC_HEADERS : {};
+  const asked = [...new Headers(init?.headers)].filter(([name]) => !TRANSPORT_HEADERS.has(name));
+  const missing = asked.filter(([name, value]) => expected[name] !== value);
+  if (missing.length > 0 || asked.length !== Object.keys(expected).length) {
+    throw new Error(
+      `the SDK asked for headers the ${provider} live client does not send: ${JSON.stringify(Object.fromEntries(asked))}`,
+    );
+  }
+}
+
 const Arguments = z.looseObject({});
 const invalid = (message: string) => ({ ok: false, error: { code: "invalid_input", message } });
 
@@ -53,6 +69,7 @@ export function sdkAgent({ provider, model }: Model): Agent {
         apiKey: "unused",
         fetch: async (_url: RequestInfo | URL, init?: RequestInit) => {
           if (typeof init?.body !== "string") throw new Error("expected a JSON request body from the provider");
+          checkHeaders(provider, init);
           const { response } = await client.complete(JSON.parse(init.body));
           return Response.json(response);
         },
@@ -60,7 +77,9 @@ export function sdkAgent({ provider, model }: Model): Agent {
       const settings = provider === "openai"
         ? {
             model: createOpenAI(options).responses(model),
-            providerOptions: { openai: { instructions: SYSTEM_PROMPT, reasoningEffort: "low", store: false } },
+            // The SDK asks for a detailed reasoning summary by default. The plain agent asks for none,
+            // so null keeps the two loops' requests alike and the summary's output tokens unbilled.
+            providerOptions: { openai: { instructions: SYSTEM_PROMPT, reasoningEffort: "low", reasoningSummary: null, store: false } },
           }
         : {
             model: createAnthropic(options)(model),
