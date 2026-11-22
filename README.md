@@ -1,6 +1,6 @@
 # desk-agent
 
-A customer-support agent for a small Romanian shop, delivered the way a forward-deployed engineer delivers one. The test set came first. The agent came second and was tuned only on its tuning set. The results come from conversations nobody read before they were scored, and one command reproduces every number on this page.
+A customer-support agent for a small Romanian shop, delivered the way a forward-deployed engineer delivers one. The test set came first. The agent came second and was tuned only on its tuning set. The results come from a set that nobody who tuned the agent had read. Every run and every reader's verdict is committed, and the commands below regrade them into each number on this page.
 
 ## The problem
 
@@ -17,12 +17,12 @@ flowchart LR
     agent <--> model["Model<br/>live, or replayed from recordings/"]
     agent -- "tools/call" --> mcp["MCP server<br/>five typed functions"]
     mcp --> shop["Shop backend<br/>checks identity and policy"]
-    session --> trace["Trace"] --> grader["Grader"] --> ledger["Ledger and report"]
+    session -- "scored runs" --> trace["Trace"] --> grader["Grader"] --> ledger["Ledger and report"]
 ```
 
 - **Five functions, behind a real MCP server:** order lookup, account lookup, policy check, file a request for staff approval, and hand over to a person. The functions enforce the policy and the identity check themselves. A request the policy forbids fails inside the function, whatever the model was told.
 - **The agent** is about 120 lines of plain function calling, plus a 46-line system prompt, with no agent framework, on two models from one vendor: a cheaper one (`plain-gpt-6-luna`) and a stronger one (`plain-gpt-6.2-sol`). Both use the same code and the same prompt. The prompt says how to behave and holds no shop facts, which come from the functions.
-- **The runner** plays each case through the same session and MCP path a live chat uses. **The grader** checks the outcome, the requests on file, exact phrases and the reply language. It derives all of them from the trace, never from the agent's own claim.
+- **The runner** plays each case through the same session and MCP path a live chat uses. **The grader** checks the outcome, the requests on file, exact phrases and the reply language. The requests and any handover come from the accepted function calls in the trace. Only the choice between resolved and refused comes from the status the agent declares with each reply.
 - **The ledger** records every scoring run with its commit and a hash of its cases and its code. **The report** grades every saved run again and refuses to print a number that no longer matches its ledger line.
 
 [The design](docs/design.md) explains each choice and the alternatives it beat.
@@ -44,11 +44,11 @@ Every model agent ran each scored set three times from a clean tree. One run mov
 On the final set, by the automatic grader:
 
 - **The cheaper model passed 52 of 54 conversations (17 to 18 per run), and the stronger one 51 of 54 (17 per run).** The keyword baseline passed 10 of 18.
-- **No model agent took a wrong action, and none tried a forbidden request,** in 108 final conversations or 108 validation conversations.
-- **The stronger model costs about 70 times as much per conversation** ($0.0147 against $0.0002) for a median turn of 2.2 s against 2.45 s.
+- **No model agent took a wrong action the grader can detect, and none tried a forbidden request,** in 108 final conversations or 108 validation conversations. The grader cannot see a false promise. Neither blind reader below found one on the final set.
+- **The stronger model costs about 70 times as much per conversation** ($0.0147 against $0.0002), with a median model time per turn of 2.2 s against 2.45 s.
 - On the validation set both models passed 47 of 54.
 
-The grader cannot see a false promise, a fact with no source or a handover made too early. Two readers judged all 108 final conversations against [a rubric](docs/judging.md) without knowing which agent wrote each one. Both are language models from vendors other than the agents' vendor.
+The grader cannot see a false promise, a fact with no source or a handover made too early. Two readers judged all 108 final conversations against [a rubric](docs/judging.md) without knowing which agent wrote each one. Each conversation showed any customer messages that a handover cut off, so a reader could judge an early handover. Both are language models from vendors other than the agents' vendor.
 
 | Acceptable on the final set | Cheaper model | Stronger model |
 | --- | ---: | ---: |
@@ -67,7 +67,7 @@ The grader cannot see a false promise, a fact with no source or a handover made 
 
 [The final failure review](results/final-failures.md) traces every failure the grader found to its root cause. [The validation review](results/held-out-failures.md) does the same for the validation set. Tuning is recorded step by step in [the design](docs/design.md#tuning), and [FAILURES.md](FAILURES.md) covers the tuning set.
 
-This table is the output of `pnpm report --markdown`, and `pnpm check` fails when it differs.
+This table is the output of `pnpm report --markdown`, and `pnpm check` fails when it differs. The keyword baseline is deterministic, so it has one run per set.
 
 <!-- report table: start -->
 | agent | runs | conversations | passed every check | resolved correctly | handover rate | wrong-action rate | blocked attempts | median turn | p95 turn | cost per conversation | code | latest commit | times scored |
@@ -112,7 +112,7 @@ These are the weak spots, stated before a reader finds them.
 - **"Test set first" means before the model agent.** The keyword baseline existed before the cases. One tuning expectation changed after review, and one tuning case was repaired after a policy correction made it unpassable. [FAILURES.md](FAILURES.md) records both.
 - **The validation set is not an unseen test.** The person who changed the complaint policy had seen its expected outcomes, which is why the final set exists.
 - **One model vendor.** Both model agents use the same provider.
-- **Text only.** A median turn of about 2.2 to 2.5 s, and about 5 s at the 95th percentile, is fine for chat and too slow for a voice line.
+- **Text only.** The model takes about 2.2 to 2.5 s per turn in the median and about 5 s at the 95th percentile. That leaves out tool time. It is workable for chat and too slow for a voice line.
 - **The language check passes what it cannot read.** A short reply or a mixed one counts as unsure and never fails.
 - **No function amends a filed request,** and an order shows no earlier claim, so a wish the customer adds after a claim is filed needs a person.
 - **Log redaction is by pattern.** It masks emails, phone, card and IBAN numbers and street addresses, but not names.
@@ -124,7 +124,7 @@ With Docker, from a fresh clone:
 
 	docker compose run --rm check
 
-The container has no network and needs no key. It typechecks, runs the 286 tests, replays the tuning set for every agent from its recordings, prints the report above and checks this README against it. CI runs the typecheck and the tests on every pull request.
+Building the image downloads Node and the dependencies. The check itself runs with no network and needs no key. It typechecks, runs the 286 tests, replays the tuning set for every agent from its recordings, prints the report above and checks this README against it. CI runs the typecheck and the tests on every pull request.
 
 Without Docker, with Node 24.3 or later and pnpm 11.18.0:
 
