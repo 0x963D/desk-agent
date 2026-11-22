@@ -1,77 +1,158 @@
 import { z } from "zod";
-import type { ApprovalRequest, Handover, ToolName } from "./shapes.ts";
 import {
-  Account,
-  contracts,
-  Order,
-  type ToolInput,
-  type ToolOutput,
-  type ToolResult,
-  type Tools,
-} from "./tools.ts";
+  RequestKind,
+  type DenialReason,
+  type Order,
+  type Remedy,
+  type Shop,
+  type ToolError,
+  type ToolName,
+} from "./shapes.ts";
+import { contracts, type ToolInput, type ToolOutput, type ToolResult, type Tools } from "./tools.ts";
 
-export const Fixtures = z.strictObject({
-  today: z.iso.date(),
-  refund_window_days: z.number().int().positive(),
-  customers: z.array(Account),
-  orders: z.array(Order),
-});
-export type Fixtures = z.infer<typeof Fixtures>;
+export type World = { shop: Shop; orders: Order[] };
 
 type Handlers = { [K in ToolName]: (input: ToolInput<K>) => ToolResult<ToolOutput<K>> };
 
 const DAY_MS = 86_400_000;
-const NOT_FOUND = { ok: false, error: "not_found" } as const;
 
-const found = <T>(data: T | undefined): ToolResult<T> =>
-  data === undefined ? NOT_FOUND : { ok: true, data };
+const fail = (error: ToolError) => ({ ok: false, error }) as const;
 
-export function createBackend(fixtures: Fixtures) {
-  const requests: ApprovalRequest[] = [];
-  let handover: Handover | null = null;
+const NOT_FOUND = fail({
+  code: "not_found",
+  message: "No order matches that order number and email. Ask the customer to check both.",
+});
 
-  const order = (id: string) => fixtures.orders.find((o) => o.order_id === id);
+const UNAVAILABLE = fail({
+  code: "unavailable",
+  message: "The shop system is not answering. Hand the conversation over with reason system_failure.",
+});
 
-  const policy = (kind: ToolInput<"check_policy">["kind"], o: Order): ToolOutput<"check_policy"> => {
-    if (kind === "delivery_change") {
-      return o.status === "placed"
-        ? { allowed: true, reason: "not_shipped_yet" }
-        : { allowed: false, reason: "already_shipped" };
-    }
-    if (o.status !== "delivered") return { allowed: false, reason: "not_delivered_yet" };
-    const days = (Date.parse(fixtures.today) - Date.parse(o.delivered_on)) / DAY_MS;
-    return days <= fixtures.refund_window_days
-      ? { allowed: true, reason: "within_return_window" }
-      : { allowed: false, reason: "outside_return_window" };
+function denialMessage(reason: DenialReason, kind: RequestKind, shop: Shop): string {
+  switch (reason) {
+    case "production_started":
+      return "Production has started, so the order can no longer be cancelled.";
+    case "already_shipped":
+      return "The order has shipped, so the delivery address can no longer change.";
+    case "not_delivered":
+      return "The order has not been delivered yet.";
+    case "window_closed":
+      return `More than ${windowOf(kind, shop)} days have passed since delivery, so the window for this request has closed.`;
+    case "commissioned_work":
+      return "Commissioned work cannot be returned.";
+    case "large_refund":
+      return `A person decides any refund above ${shop.person_decides_refunds_above_ron} lei. Hand the conversation over with reason staff_decision.`;
+    case "duplicate":
+      return "A request of this kind is already on file for this order.";
+  }
+}
+
+const windowOf = (kind: RequestKind, shop: Shop) =>
+  kind === "return" ? shop.return_window_days : shop.damage_window_days;
+
+function refundOf(kind: RequestKind, order: Order, remedy?: Remedy): number {
+  switch (kind) {
+    case "cancellation":
+    case "return":
+      return order.total_ron;
+    case "damage":
+      return remedy === "refund" ? order.total_ron : 0;
+    case "delivery_change":
+      return 0;
+  }
+}
+
+function denial(
+  shop: Shop,
+  order: Order,
+  kind: RequestKind,
+  remedy: Remedy | undefined,
+  filed: ReadonlySet<string>,
+): DenialReason | undefined {
+  const daysSinceDelivery =
+    order.status === "delivered"
+      ? (Date.parse(shop.business_date) - Date.parse(order.delivered_on)) / DAY_MS
+      : undefined;
+  switch (kind) {
+    case "cancellation":
+      if (order.status !== "paid") return "production_started";
+      break;
+    case "delivery_change":
+      if (order.status === "shipped" || order.status === "delivered") return "already_shipped";
+      break;
+    case "return":
+    case "damage":
+      if (daysSinceDelivery === undefined) return "not_delivered";
+      if (daysSinceDelivery > windowOf(kind, shop)) return "window_closed";
+      if (kind === "return" && order.items.some((item) => item.kind === "commission")) {
+        return "commissioned_work";
+      }
+  }
+  if (refundOf(kind, order, remedy) > shop.person_decides_refunds_above_ron) return "large_refund";
+  if (filed.has(`${kind} ${order.order_id}`)) return "duplicate";
+  return undefined;
+}
+
+export function createBackend(world: World, options: { outage?: boolean } = {}): Tools {
+  const { shop, orders } = world;
+  const filed = new Set<string>();
+
+  const verified = (order_id: string, email: string) => {
+    const id = order_id.trim().toUpperCase();
+    const address = email.trim().toLowerCase();
+    return orders.find((o) => o.order_id === id && o.email.toLowerCase() === address);
   };
 
   const handlers: Handlers = {
-    lookup_order: ({ order_id }) => found(order(order_id)),
-    lookup_account: ({ customer_id }) =>
-      found(fixtures.customers.find((c) => c.customer_id === customer_id)),
-    check_policy: ({ kind, order_id }) => {
-      const o = order(order_id);
-      return o ? { ok: true, data: policy(kind, o) } : NOT_FOUND;
+    lookup_order: ({ order_id, email }) => {
+      const order = verified(order_id, email);
+      return order ? { ok: true, data: order } : NOT_FOUND;
     },
-    request_approval: (request) => {
-      if (!order(request.order_id)) return NOT_FOUND;
-      requests.push(request);
-      return { ok: true, data: { request_id: `R-${requests.length}`, status: "pending_approval" } };
+    lookup_account: ({ order_id, email }) => {
+      const order = verified(order_id, email);
+      if (!order) return NOT_FOUND;
+      const mine = orders
+        .filter((o) => o.email.toLowerCase() === order.email.toLowerCase())
+        .sort((a, b) => a.placed_on.localeCompare(b.placed_on))
+        .map(({ order_id, status, placed_on, total_ron }) => ({ order_id, status, placed_on, total_ron }));
+      return { ok: true, data: { orders: mine } };
     },
-    hand_over_to_human: (input) => {
-      handover ??= input;
-      return { ok: true, data: { handover_id: "H-1" } };
+    check_policy: ({ topic, order_id, email }) => {
+      const answer = { topic, rule: shop.rules[topic] };
+      if (order_id === undefined || email === undefined) return { ok: true, data: answer };
+      const order = verified(order_id, email);
+      if (!order) return NOT_FOUND;
+      const kind = RequestKind.safeParse(topic);
+      if (!kind.success) return { ok: true, data: answer };
+      const reason = denial(shop, order, kind.data, undefined, filed);
+      return {
+        ok: true,
+        data: { ...answer, decision: reason ? { allowed: false, reason } : { allowed: true } },
+      };
     },
+    file_request: ({ order_id, email, change }) => {
+      const order = verified(order_id, email);
+      if (!order) return NOT_FOUND;
+      const remedy = change.kind === "damage" ? change.remedy : undefined;
+      const reason = denial(shop, order, change.kind, remedy, filed);
+      if (reason) {
+        return fail({ code: "policy_denied", reason, message: denialMessage(reason, change.kind, shop) });
+      }
+      filed.add(`${change.kind} ${order.order_id}`);
+      return { ok: true, data: { request_id: `R-${filed.size}`, status: "pending_approval" } };
+    },
+    hand_over: () => ({ ok: true, data: { handover_id: "H-1" } }),
   };
 
-  const tools: Tools = {
+  return {
     async call<K extends ToolName>(name: K, input: unknown) {
+      if (options.outage && name !== "hand_over") return UNAVAILABLE;
       const parsed = contracts[name].input.safeParse(input);
-      if (!parsed.success) return { ok: false, error: "invalid_input" } as const;
+      if (!parsed.success) {
+        return fail({ code: "invalid_input", message: z.prettifyError(parsed.error) });
+      }
       const handle = handlers[name] as (input: unknown) => ToolResult<ToolOutput<K>>;
       return handle(parsed.data);
     },
   };
-
-  return { tools, state: () => ({ requests: [...requests], handover }) };
 }
