@@ -5,7 +5,7 @@ import { dirname, isAbsolute, join, relative } from "node:path";
 import { agents } from "./agents/index.ts";
 import { loadSplit, readConversations, unlessMissing, writeJson } from "./files.ts";
 import { readLedger, scoredRunDir } from "./ledger.ts";
-import { AuditKey, Criterion, type Conversation, type Split, type TestCase, type Turn } from "./shapes.ts";
+import { AuditKey, Criterion, type Conversation, type ScoredSet, type Split, type TestCase, type Turn } from "./shapes.ts";
 import { handoverOf } from "./trace.ts";
 
 // `unplayed` holds the customer messages the case's script still held when the runner stopped at a handover.
@@ -129,7 +129,7 @@ export function unplayedOf(conversation: Conversation, cases: readonly TestCase[
   return testCase.turns.slice(played.length);
 }
 
-async function modelRuns(root: string): Promise<Source[]> {
+async function modelRuns(root: string, set: ScoredSet): Promise<Source[]> {
   const sources: Source[] = [];
   const casesOf = new Map<Split, Promise<TestCase[]>>();
   const cases = (split: Split) => {
@@ -137,7 +137,7 @@ async function modelRuns(root: string): Promise<Source[]> {
     return casesOf.get(split)!;
   };
   for (const entry of await readLedger(root)) {
-    if (!agents.get(entry.agent)?.liveModel) continue;
+    if (entry.summary.split !== set || !agents.get(entry.agent)?.liveModel) continue;
     const conversations = await readConversations(scoredRunDir(root, entry.run));
     if (conversations.length !== entry.summary.cases) {
       throw new Error(
@@ -154,7 +154,7 @@ async function modelRuns(root: string): Promise<Source[]> {
       })),
     );
   }
-  if (sources.length === 0) throw new Error("the ledger names no scored run of a model agent");
+  if (sources.length === 0) throw new Error(`the ledger names no scored run of a model agent on the ${set} set`);
   return sources;
 }
 
@@ -174,7 +174,12 @@ export function ignoredByGit(root: string, path: string): boolean {
 
 export async function writePacket(
   root: string,
-  { out, key, seed = randomBytes(8).toString("hex") }: { out: string; key: string; seed?: string | undefined },
+  {
+    out,
+    key,
+    set = "held-out",
+    seed = randomBytes(8).toString("hex"),
+  }: { out: string; key: string; set?: ScoredSet | undefined; seed?: string | undefined },
 ): Promise<string> {
   if (inside(out, key)) throw new Error("the key must live outside the packet, so a reader can be handed the packet alone");
   if (inside(root, out) && !ignoredByGit(root, out)) {
@@ -183,7 +188,7 @@ export async function writePacket(
   if ((await unlessMissing(readdir(out), [])).length > 0) {
     throw new Error(`${out} is not empty. Write the packet into an empty folder, so no file from another packet stays in it`);
   }
-  const sources = await modelRuns(root);
+  const sources = await modelRuns(root, set);
   const doc = (name: string) => readFile(join(root, "docs", name), "utf8");
   const [scope, judging] = await Promise.all([doc("scope.md"), doc("judging.md")]);
   const packet = buildPacket(sources, seed, { scope, judging });

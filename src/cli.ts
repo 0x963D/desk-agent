@@ -34,7 +34,7 @@ import { formatSummary, Summary, summarize } from "./summary.ts";
 
 const USAGE = [
   "usage: tune [--agent <name>] [--record] | score [--agent <name>] [--record] [--set held-out|final] | regrade <run directory> | replay | report [--markdown] | report --runs [--markdown] | report --check-readme | ledger-code | chat [--agent <name>] [--replay <tuning case id>]",
-  "       | audit-packet --out <dir> --key <file> [--seed <text>] | audit-agreement --key <file> [--partial] <verdict file>...",
+  "       | audit-packet --out <dir> --key <file> [--seed <text>] [--set held-out|final] | audit-agreement --key <file> [--partial] <verdict file>...",
   "       | audit-sheet --packet <dir> --ids <file> --out <file.html>",
 ].join("\n");
 
@@ -306,8 +306,15 @@ export async function main(args: string[], root: string = process.cwd(), termina
   // True when the command got `count` positionals and no option outside `allowed`.
   const takes = (count: number, ...allowed: string[]) => rest.length === count && only(...allowed);
 
-  if (command === "audit-packet" && values.out && values.key && takes(0, "out", "key", "seed")) {
-    return writePacket(root, { out: resolve(root, values.out), key: resolve(root, values.key), seed: values.seed });
+  if (command === "audit-packet" && values.out && values.key && takes(0, "out", "key", "seed", "set")) {
+    const packetSet = ScoredSet.safeParse(values.set ?? "held-out");
+    if (!packetSet.success) throw new Error(`--set takes ${ScoredSet.options.join(" or ")}, not ${values.set}`);
+    return writePacket(root, {
+      out: resolve(root, values.out),
+      key: resolve(root, values.key),
+      seed: values.seed,
+      set: packetSet.data,
+    });
   }
   if (command === "audit-agreement" && values.key && rest.length > 0 && only("key", "partial")) {
     const files = rest.map((file) => resolve(root, file));
