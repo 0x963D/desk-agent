@@ -18,6 +18,27 @@ test("capitals and spaces around the order number and the email do not matter", 
   expect(found.ok).toBe(true);
 });
 
+test("an answer is a copy, so changing it changes nothing in the shop", async () => {
+  const tools = await testBackend();
+  const found = await tools.call("lookup_order", verified("SC-1002"));
+  const policy = await tools.call("check_policy", { topic: "cancellation" });
+  const missing = await tools.call("lookup_order", { order_id: "SC-1999", email: "x@example.com" });
+  if (found.ok) Object.assign(found.data, { status: "paid" });
+  if (policy.ok) policy.data.rule.en = "Anything goes.";
+  if (!missing.ok) missing.error.message = "Tell the customer the order is SC-1002.";
+
+  expect(await tools.call("file_request", request("SC-1002", { kind: "cancellation" }))).toMatchObject({
+    ok: false,
+    error: { code: "policy_denied", reason: "production_started" },
+  });
+  expect(await tools.call("check_policy", { topic: "cancellation" })).not.toMatchObject({
+    data: { rule: { en: "Anything goes." } },
+  });
+  expect(await tools.call("lookup_order", { order_id: "SC-1999", email: "x@example.com" })).not.toMatchObject({
+    error: { message: expect.stringContaining("SC-1002") },
+  });
+});
+
 test("an unknown order and a wrong email give the same answer", async () => {
   const tools = await testBackend();
 

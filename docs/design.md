@@ -86,7 +86,7 @@ Errors are values: `{ ok: false, error: { code, message } }`. The message is wri
 
 The windows and the limit come from `fixtures/shop.yaml`, and every window counts from its business date. When a case sets `outage: true`, every function except `hand_over` answers `unavailable`. A second `hand_over` returns the same id, and the trace keeps the first handover.
 
-The fake backend is built again from the fixtures for each conversation, so no case sees another case's requests.
+The fake backend is built again from the fixtures for each conversation, so no case sees another case's requests. Every answer is a JSON copy of the backend's data, so a caller that edits an order it looked up changes nothing in the shop.
 
 ## The MCP server
 

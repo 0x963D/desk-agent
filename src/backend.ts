@@ -8,6 +8,7 @@ import {
   type ToolError,
   type ToolName,
 } from "./shapes.ts";
+import { snapshot } from "./snapshot.ts";
 import { contracts, type ToolInput, type ToolOutput, type ToolResult, type Tools } from "./tools.ts";
 
 export type World = { shop: Shop; orders: Order[] };
@@ -144,15 +145,19 @@ export function createBackend(world: World, options: { outage?: boolean } = {}):
     hand_over: () => ({ ok: true, data: { handover_id: "H-1" } }),
   };
 
+  const answer = <K extends ToolName>(name: K, input: unknown): ToolResult<ToolOutput<K>> => {
+    if (options.outage && name !== "hand_over") return UNAVAILABLE;
+    const parsed = contracts[name].input.safeParse(input);
+    if (!parsed.success) {
+      return fail({ code: "invalid_input", message: z.prettifyError(parsed.error) });
+    }
+    const handle = handlers[name] as (input: unknown) => ToolResult<ToolOutput<K>>;
+    return handle(parsed.data);
+  };
+
   return {
-    async call<K extends ToolName>(name: K, input: unknown) {
-      if (options.outage && name !== "hand_over") return UNAVAILABLE;
-      const parsed = contracts[name].input.safeParse(input);
-      if (!parsed.success) {
-        return fail({ code: "invalid_input", message: z.prettifyError(parsed.error) });
-      }
-      const handle = handlers[name] as (input: unknown) => ToolResult<ToolOutput<K>>;
-      return handle(parsed.data);
+    async call(name, input) {
+      return snapshot(answer(name, input));
     },
   };
 }
