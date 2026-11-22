@@ -1,23 +1,46 @@
-import { randomBytes } from "node:crypto";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
+import { createInterface } from "node:readline";
 import { parseArgs } from "node:util";
 import type { Agent } from "./agent.ts";
 import { agents, DEFAULT_AGENT } from "./agents/index.ts";
 import { createBackend } from "./backend.ts";
+import { chat, type ChatOutput } from "./chat.ts";
 import { envFile } from "./env.ts";
-import { caseDir, filesIn, loadSplit, readConversations, writeJson } from "./files.ts";
+import { caseDir, filesIn, loadSplit, readConversations, runName, writeJson } from "./files.ts";
 import { grade, passed } from "./grade.ts";
 import { appendLedger, gitState, hashCaseFiles, ledgerFile, readLedger, type LedgerEntry } from "./ledger.ts";
 import { recordedModel, recordingDir, recordingPath, recordModel, type Recorder } from "./model.ts";
-import { reportTable, type ReportRow } from "./report.ts";
+import { README_END, README_START, readmeTable, reportTable, runsTable, type ReportRow } from "./report.ts";
 import { runCase } from "./runner.ts";
 import { Conversation, TestResult, type Split, type TestCase } from "./shapes.ts";
 import { spendCap, spendFile, spendGuard } from "./spend.ts";
 import { formatSummary, Summary, summarize } from "./summary.ts";
 
 const USAGE =
-  "usage: tune [--agent <name>] [--record] | score [--agent <name>] [--record] | regrade <run directory> | replay | report [--markdown]";
+  "usage: tune [--agent <name>] [--record] | score [--agent <name>] [--record] | regrade <run directory> | replay | report [--markdown] | report --runs [--markdown] | report --check-readme | chat [--agent <name>] [--replay <tuning case id>]";
+
+// The terminal `pnpm chat` talks through. Standard input is opened only when a live chat reads it.
+export type Terminal = { lines(): AsyncIterable<string>; interactive: boolean; output: ChatOutput };
+
+const PROMPT = "customer  ";
+
+const processTerminal: Terminal = {
+  interactive: Boolean(process.stdin.isTTY),
+  lines: async function* () {
+    const typed = createInterface({ input: process.stdin, output: process.stdout, terminal: Boolean(process.stdin.isTTY), prompt: PROMPT });
+    try {
+      if (process.stdin.isTTY) typed.prompt();
+      for await (const line of typed) {
+        yield line;
+        if (process.stdin.isTTY) typed.prompt();
+      }
+    } finally {
+      typed.close();
+    }
+  },
+  output: { conversation: (line) => console.log(line), note: (line) => console.log(line) },
+};
 
 type Graded = { results: TestResult[]; summary: Summary };
 
@@ -59,8 +82,7 @@ function report(root: string, dir: string, { results, summary }: Graded): string
 }
 
 async function newRunDir(parent: string): Promise<string> {
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const dir = join(parent, `${stamp}-${randomBytes(2).toString("hex")}`);
+  const dir = join(parent, runName());
   await mkdir(parent, { recursive: true });
   await mkdir(dir);
   return dir;
@@ -160,6 +182,31 @@ async function scoreReport(root: string, markdown: boolean): Promise<string> {
   return reportTable(rows, { markdown });
 }
 
+async function runsReport(root: string, markdown: boolean): Promise<string> {
+  const ledger = await readLedger(root);
+  if (ledger.length === 0) {
+    throw new Error(`no scoring run: ${shown(root, ledgerFile(root))} holds no line. pnpm score records one.`);
+  }
+  return runsTable(ledger, { markdown });
+}
+
+async function checkReadme(root: string): Promise<string> {
+  const file = join(root, "README.md");
+  const inReadme = readmeTable(await readFile(file, "utf8"));
+  if (inReadme === undefined) {
+    throw new Error(`README.md holds no report table between the lines ${README_START} and ${README_END}`);
+  }
+  const current = await scoreReport(root, true);
+  if (inReadme === current) return "README.md shows the current pnpm report --markdown table.";
+  const readmeLines = inReadme.split("\n");
+  const currentLines = current.split("\n");
+  let first = 0;
+  while (readmeLines[first] === currentLines[first]) first++;
+  throw new Error(
+    `the table in README.md is not the current pnpm report --markdown, so the README no longer shows the numbers the ledger and the saved runs give. Line ${first + 1} of the table reads ${JSON.stringify(readmeLines[first] ?? "")} where the report prints ${JSON.stringify(currentLines[first] ?? "")}. Put the output of pnpm report --markdown between the two marker lines.`,
+  );
+}
+
 async function scoredNote(root: string, dir: string): Promise<string | undefined> {
   const run = shown(root, dir);
   const entry = (await readLedger(root)).findLast((line) => line.run === run);
@@ -183,12 +230,19 @@ async function regrade(root: string, dir: string): Promise<string> {
   return note ? `${printed}\n\n${note}` : printed;
 }
 
-export async function main(args: string[], root: string = process.cwd()): Promise<string> {
+export async function main(args: string[], root: string = process.cwd(), terminal: Terminal = processTerminal): Promise<string> {
   let parsed;
   try {
     parsed = parseArgs({
       args,
-      options: { agent: { type: "string" }, record: { type: "boolean" }, markdown: { type: "boolean" } },
+      options: {
+        agent: { type: "string" },
+        record: { type: "boolean" },
+        markdown: { type: "boolean" },
+        replay: { type: "string" },
+        runs: { type: "boolean" },
+        "check-readme": { type: "boolean" },
+      },
       allowPositionals: true,
       strict: true,
     });
@@ -196,18 +250,30 @@ export async function main(args: string[], root: string = process.cwd()): Promis
     throw new Error(USAGE);
   }
   const [command, ...rest] = parsed.positionals;
-  const name = parsed.values.agent ?? DEFAULT_AGENT;
-  const bare = (count: number) => rest.length === count && parsed.values.agent === undefined && !parsed.values.record;
+  const { values } = parsed;
+  // True when the command got `count` positionals and no option outside `allowed`.
+  const takes = (count: number, ...allowed: string[]) =>
+    rest.length === count && Object.keys(values).every((option) => allowed.includes(option));
 
-  if (command === "report" && bare(0)) return scoreReport(root, parsed.values.markdown ?? false);
-  if (parsed.values.markdown !== undefined) throw new Error(USAGE);
-  if (command === "regrade" && bare(1)) return regrade(root, resolve(root, rest[0]!));
-  if (command === "replay" && bare(0)) return replay(root);
-  if ((command !== "tune" && command !== "score") || rest.length > 0) throw new Error(USAGE);
+  if (command === "report" && values["check-readme"] && takes(0, "check-readme")) return checkReadme(root);
+  if (command === "report" && values.runs && takes(0, "runs", "markdown")) return runsReport(root, values.markdown ?? false);
+  if (command === "report" && takes(0, "markdown")) return scoreReport(root, values.markdown ?? false);
+  if (command === "regrade" && takes(1)) return regrade(root, resolve(root, rest[0]!));
+  if (command === "replay" && takes(0)) return replay(root);
+  const chatting = command === "chat" && takes(0, "agent", "replay");
+  if (!chatting && !((command === "tune" || command === "score") && takes(0, "agent", "record"))) throw new Error(USAGE);
+  const name = values.agent ?? DEFAULT_AGENT;
   const agent = agents.get(name);
   if (!agent) throw new Error(`no agent named ${name}. Agents: ${[...agents.keys()].join(", ")}`);
+  if (chatting) {
+    const source =
+      values.replay !== undefined
+        ? ({ mode: "replay", case_id: values.replay } as const)
+        : ({ mode: "live", lines: terminal.lines(), echo: !terminal.interactive } as const);
+    return chat(root, agent, source, terminal.output);
+  }
   let record: ((file: string) => Recorder) | undefined;
-  if (parsed.values.record) {
+  if (values.record) {
     if (!agent.liveModel) throw new Error(`${agent.name} declares no live model client, so it has nothing to record`);
     const live = agent.liveModel();
     const guard = spendGuard(spendFile(root), spendCap());

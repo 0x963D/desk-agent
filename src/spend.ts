@@ -17,6 +17,7 @@ export function spendCap(env: NodeJS.ProcessEnv = process.env): number {
 }
 
 export type SpendGuard = {
+  spent(): Promise<number>;
   allow(): Promise<void>;
   add(cost_usd: number): Promise<void>;
 };
@@ -24,6 +25,7 @@ export type SpendGuard = {
 export function spendGuard(file: string, cap_usd: number): SpendGuard {
   const spent = async () => (await unlessMissing(readJson(file, Spend), { spent_usd: 0 })).spent_usd;
   return {
+    spent,
     async allow() {
       const so_far = await spent();
       if (so_far >= cap_usd) {

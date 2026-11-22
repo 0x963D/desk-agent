@@ -4,6 +4,11 @@ A bilingual (Romanian and English) customer-support agent, built and measured th
 
 Work in progress. Results, architecture and setup will appear here as they are measured.
 
+## Results
+
+<!-- report table: start -->
+<!-- report table: end -->
+
 ## Run the check
 
 With Docker installed, from a clone of this repository:

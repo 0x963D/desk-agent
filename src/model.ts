@@ -24,16 +24,28 @@ export type LiveModel = {
 
 export type Recorder = ModelClient & { save(): Promise<void> };
 
-export function recordModel(live: LiveModel, file: string, guard: SpendGuard): Recorder {
-  const calls: ModelCall[] = [];
+// A live client under the spend guard: it asks the guard before each call, times the call and
+// adds its cost to the spend. `pnpm chat` talks through it, and the recorder wraps it.
+export function guardedModel(live: LiveModel, guard: SpendGuard): ModelClient {
   return {
     async complete(request) {
       await guard.allow();
-      const sent = snapshot(request);
       const started = performance.now();
       const { response, cost_usd } = await live.complete(request);
       const duration_ms = performance.now() - started;
       await guard.add(cost_usd);
+      return { response, duration_ms, cost_usd };
+    },
+  };
+}
+
+export function recordModel(live: LiveModel, file: string, guard: SpendGuard): Recorder {
+  const client = guardedModel(live, guard);
+  const calls: ModelCall[] = [];
+  return {
+    async complete(request) {
+      const sent = snapshot(request);
+      const { response, duration_ms, cost_usd } = await client.complete(request);
       const call = ModelCall.parse({ request: sent, response: snapshot(response), duration_ms, cost_usd });
       calls.push(call);
       return snapshot(call);

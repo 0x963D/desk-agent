@@ -2,7 +2,7 @@
 
 This page explains the foundation of the support agent for Studio Cobalt: the data shapes, the five functions and the MCP server that carries them, the runner, the recorder, the grader and the scoring record. It records what was chosen, what was considered, and why the alternatives lost. [The scope](scope.md) holds the shop policy, and [the case contract](writing-cases.md) holds the case and fixture formats. This page does not repeat them.
 
-Nothing here calls a model or the network unless a command is given `--record`.
+Nothing here calls a model or the network unless a command is given `--record`, or `pnpm chat` talks live to a model agent.
 
 	pnpm test                    # the runner's own tests, offline
 	pnpm typecheck
@@ -12,29 +12,34 @@ Nothing here calls a model or the network unless a command is given `--record`.
 	pnpm replay                  # run cases/tuning for every agent that can run offline
 	pnpm report                  # the latest held-out score of every agent, regraded from results/
 	pnpm report --markdown       # the same table as Markdown
+	pnpm report --runs           # every line of results/ledger.jsonl, oldest first; --markdown for Markdown
+	pnpm report --check-readme   # fail when the README's table is not the current report --markdown
 	docker compose run --rm check   # typecheck, test, replay and report in a container with no network
 	pnpm tune --agent rule-based # pick an agent from the registry
 	pnpm tune --agent plain-gpt-6-luna   # the model agent, replayed from recordings/
 	pnpm tune --record           # call the agent's live model and write recordings/<agent>/tuning/
 	pnpm mcp                     # serve the five functions over stdio, on the tuning orders
+	pnpm chat --agent <name>     # type as the customer and the agent answers, on the tuning orders
+	pnpm chat --agent <name> --replay <tuning case id>   # play a tuning case's recording, offline
 
-Git ignores `traces/` and `.artifacts/`. A scoring run in `results/` and a recording in `recordings/` are meant to be committed.
+Git ignores `traces/`, which holds the tuning runs and the chat session logs, and `.artifacts/`. A scoring run in `results/` and a recording in `recordings/` are meant to be committed.
 
 ## Read the code in this order
 
-The source is about 2,000 lines in 24 files. `wc -l src/*.ts src/agents/*.ts` regenerates the count.
+The source is about 2,350 lines in 26 files. `wc -l src/*.ts src/agents/*.ts` regenerates the count.
 
 1. `src/shapes.ts` names every shape that crosses a file or a function boundary.
 2. `src/tools.ts` holds the five function contracts.
 3. `src/backend.ts` is the in-memory shop. It verifies the customer and enforces the policy.
 4. `src/mcp.ts` serves the backend as an MCP server and reads it back through an MCP client. It is also the stdio entry.
-5. `src/agent.ts` is the agent boundary. `src/model.ts` replays and records model calls, and `src/spend.ts` caps what a recording may spend. `src/snapshot.ts` is the one deep copy that the backend, the runner and the recorder share.
-6. `src/runner.ts` plays one case through MCP and returns its conversation.
+5. `src/agent.ts` is the agent boundary. `src/model.ts` replays and records model calls, and `src/spend.ts` caps what a recording or a live chat may spend. `src/snapshot.ts` is the one deep copy that the backend, the runner and the recorder share.
+6. `src/runner.ts` opens a session, one conversation through MCP that takes one customer message at a time, and plays a case through it.
 7. `src/trace.ts` derives the effects and the outcome from a conversation.
 8. `src/grade.ts` compares a conversation with its case. `src/language.ts` reads the language of a message for it.
 9. `src/summary.ts` turns the results of one run into the numbers.
-10. `src/files.ts` reads and writes files and enforces the case contract. `src/ledger.ts` records a scoring run. `src/report.ts` lays out the report table.
-11. `src/cli.ts` holds the five commands, and `src/env.ts` finds the environment file it loads. `src/agents/` holds the registry, the rule-based baseline and the plain model agent: `prompt.ts` is the system prompt, `openai.ts` the live client and its prices, `plain.ts` the agent.
+10. `src/files.ts` reads and writes files and enforces the case contract. `src/ledger.ts` records a scoring run. `src/report.ts` lays out the report and the run tables and finds the README's table.
+11. `src/chat.ts` lets a person talk to an agent, and `src/redact.ts` masks the personal data in what it logs and prints.
+12. `src/cli.ts` holds the six commands, and `src/env.ts` finds the environment file it loads. `src/agents/` holds the registry, the rule-based baseline and the plain model agent: `prompt.ts` is the system prompt, `openai.ts` the live client and its prices, `plain.ts` the agent.
 
 ## The shapes
 
@@ -51,6 +56,7 @@ Every shape is a zod schema in `src/shapes.ts`, and its TypeScript type is deriv
 | `TestResult` | The grade of one conversation. | `<run>/results.json` |
 | `Summary` | The numbers for one run of one split. | `<run>/summary.json` |
 | `LedgerEntry` | One scoring run: the time, the agent, the commit, the tree state, a hash of the held-out cases and the summary. | `results/ledger.jsonl` |
+| `ChatLog` | One `pnpm chat` session: the conversation id, the agent, the replayed case if any, the start time and the turns, every string in them masked. | `traces/chat/<agent>/<session>.json` |
 
 Seven choices in the shapes and the loader remove states that should not exist.
 
@@ -100,7 +106,7 @@ The fake backend is built again from the fixtures for each conversation, so no c
 
 `remoteTools` turns an MCP client back into `Tools`. It parses the structured content, and on success parses the data with the function's output schema, so a malformed answer fails loudly at the boundary.
 
-The runner sends every function call through MCP. For each conversation it builds a server on that case's backend, which holds the case's orders and outage flag, connects a client over the SDK's `InMemoryTransport`, and closes both when the conversation ends. The trace records the input as the agent sent it and the output as the client returned it, so the traces of the rule-based agent are the same as before MCP, apart from the conversation id and the time. The runner takes a JSON copy of the input before it sends it and of the output when it arrives, and it hands the agent a copy of the history at each turn. Agent code that later edits a call or an earlier turn changes its own copy, never the trace.
+The runner sends every function call through MCP. For each conversation it builds a server on that case's backend, which holds the case's orders and outage flag, connects a client over the SDK's `InMemoryTransport`, and closes both when the conversation ends. `openSession` does this for one conversation and takes the customer's messages one at a time. `runCase` plays a case's turns through it, and `pnpm chat` plays a person's, so both reach the agent and the shop by one path. The trace records the input as the agent sent it and the output as the client returned it, so the traces of the rule-based agent are the same as before MCP, apart from the conversation id and the time. The runner takes a JSON copy of the input before it sends it and of the output when it arrives, and it hands the agent a copy of the history at each turn. Agent code that later edits a call or an earlier turn changes its own copy, never the trace.
 
 `pnpm mcp` runs `src/mcp.ts`, which serves the tuning orders over stdio with `serveStdio`. It reads `fixtures/tuning.yaml` by name, so it never serves the held-out orders. pnpm writes its own banner to stderr, so an MCP client can launch `pnpm mcp` directly. To try the functions by hand, give the MCP Inspector the command `pnpm mcp`.
 
@@ -214,12 +220,11 @@ Recordings live at `recordings/<agent>/<split>/<case id>.json`, one array of `Mo
 
 An agent in the registry may declare `liveModel`, a function that builds its live model client. The client answers `complete(request)` with the response and the cost of that call in US dollars, which it computes from the token usage the provider reports. The rule-based agent declares none, and `--record` refuses it before the run starts.
 
-With `--record`, the CLI builds the live client once per run and, for each conversation, wraps it with `recordModel` in `src/model.ts`. The runner wraps it once more to measure each turn, and the agent receives that as `model` in `open`, so its code is the same for a live run and a replay. For each call the recorder:
+With `--record`, the CLI builds the live client once per run and, for each conversation, wraps it with `recordModel` in `src/model.ts`. The runner wraps it once more to measure each turn, and the agent receives that as `model` in `open`, so its code is the same for a live run and a replay. The recorder sends each call through `guardedModel`, the live client under the spend guard, which a live `pnpm chat` uses on its own. For each call:
 
-1. asks the spend guard whether a live call is allowed,
-2. copies the request, then times the live call with `performance.now()`,
-3. adds the reported cost to the running spend,
-4. keeps the call, with the copied request and response, the time and the cost, and hands the agent a separate copy, so an agent that edits a response changes nothing in the recording.
+1. the recorder copies the request,
+2. the guarded client asks the spend guard whether a live call is allowed, times the live call with `performance.now()` and adds the reported cost to the running spend,
+3. the recorder keeps the call, with the copied request and response, the time and the cost, and hands the agent a separate copy, so an agent that edits a response changes nothing in the recording.
 
 When the conversation ends, the CLI saves the calls in order to the conversation's recording path. A replay of that file gives the agent the same responses, times and costs, so it produces the same turns.
 
@@ -288,9 +293,19 @@ A summary needs one result for every case of its split. An interrupted run leave
 | Print the best run of each agent. | Rejected. | Picking the best of several held-out runs is tuning on the held-out set. |
 | Regrade the latest run and stop on any difference. | Chosen. | Every printed number is one the current code reproduces from committed files. |
 
+`pnpm report --runs` prints one row for every line of the ledger, oldest first: the agent, the time, the commit, whether the tree was dirty, the first 12 characters of the held-out cases' hash and the counts of the summary. It reads the ledger only, so it works where the saved runs are absent, and a change of hash between two rows shows that the held-out cases changed between those scores. `--markdown` prints it as Markdown.
+
+README.md shows the `pnpm report --markdown` table between the lines `<!-- report table: start -->` and `<!-- report table: end -->`. `pnpm report --check-readme` builds the report as `pnpm report --markdown` does, regrading the latest runs, and fails when the lines between the markers differ from it. The error names the first line that differs. A new score makes the table stale, and so does a hand edit or a grader change that moves a number. `pnpm check` runs it last, so the container check fails until the README shows the current numbers.
+
+| Alternative | Verdict | Why |
+| --- | --- | --- |
+| The README quotes the numbers in its prose. | Rejected. | A sentence cannot be compared with the report, so a stale number goes unnoticed. |
+| A command that rewrites the README table. | Deferred. | Pasting the output of `pnpm report --markdown` is one step, and the check catches a paste that went wrong. |
+| A marked block that must equal the report. | Chosen. | The README cannot hold a number that the current code and the committed runs do not reproduce. |
+
 `pnpm replay` runs the tuning set for each agent in the registry. An agent with a live model client needs recordings, and one with no file under `recordings/<agent>/tuning/` is skipped with a sentence that says so. An agent with only some recordings stops on the first case without one, because a partial replay would print numbers over fewer cases.
 
-`docker compose run --rm check` builds the image in `Dockerfile` and runs `pnpm check`: the typecheck, the tests, the replay and the report. The build needs the network, to fetch the pinned `node:24.22.2-slim` image, Git, pnpm and the locked dependencies. The run does not: `compose.yaml` sets `network_mode: none`, so a test or a command that reached for a provider would fail the check. `pull_policy: build` builds again on every run, so the image never lags behind the checkout. `.dockerignore` leaves out `.git`, `.env` and the local run folders. The tests still need the `git` binary, because the score tests make throwaway repositories.
+`docker compose run --rm check` builds the image in `Dockerfile` and runs `pnpm check`: the typecheck, the tests, the replay, the report and the README check. The build needs the network, to fetch the pinned `node:24.22.2-slim` image, Git, pnpm and the locked dependencies. The run does not: `compose.yaml` sets `network_mode: none`, so a test or a command that reached for a provider would fail the check. `pull_policy: build` builds again on every run, so the image never lags behind the checkout. `.dockerignore` leaves out `.git`, `.env` and the local run folders. The tests still need the `git` binary, because the score tests make throwaway repositories.
 
 ## The rule-based agent
 
@@ -413,6 +428,41 @@ Turn times are nearest-rank, from model time only. The committed run of each age
 
 **What limits the number** on Luna is a handover the customer did not ask for, half a case per run. After a refusal Luna offers a colleague and then hands over on the customer's next message, or it hands over a request it has just filed because staff must approve it. [FAILURES.md](../FAILURES.md) traces both. Sol passed every case in three runs, so the tuning set no longer separates the two models. Sol costs about 65 times as much per conversation for at most one case more per run.
 
+## Talking to the agent
+
+`pnpm chat --agent <name>` lets a person type as the customer. `chat` in `src/chat.ts` plays each message through `openSession`, the session that `runCase` plays a case through: the same agent code, the same MCP server and client, and a backend built from the tuning orders, so a chat never sees a held-out order. The terminal shows the customer's and the agent's text as they are, one line per function call with its input and its result cut at 200 characters, then the reply's status, time and cost. When the input is piped rather than typed, chat echoes each customer line, so the output reads as a transcript. Chat ends when the input ends, or when the agent hands over, as a case does, because a person now owns the conversation. A blank line is skipped.
+
+A model agent's live client is built before chat prints anything, so a missing key stops it before anything is spent. The client is `guardedModel`, under the spend guard that `--record` uses, so a chat's calls count in the same `.artifacts/spend.json` and stop at the same cap. Chat prints the cap and the spend so far when it starts, and what it spent when it ends. It saves no recording, because a recording holds the requests as sent, with the customer's text unmasked. The rule-based agent makes no model call, so its chat costs nothing and needs no key.
+
+`--replay <tuning case id>` plays the customer turns of one tuning case against the agent's committed recording, `recordings/<agent>/tuning/<case id>.json`, with the case's outage flag. The session is the one the scored run used, so the agent sends the requests it recorded and the replay answers them, offline and without a key. Chat loads only the tuning split, so a held-out case cannot be replayed.
+
+Each session writes its log to `traces/chat/<agent>/<start time>-<suffix>.json` after every turn, so an interrupted chat keeps its finished turns. The log is a `ChatLog`: the turns with every string passed through `redact`, and the conversation id, the agent, the start time and the replayed case, which are the shop's own and stay as they are.
+
+| Alternative | Verdict | Why |
+| --- | --- | --- |
+| A loop in chat that calls the agent and the MCP client itself. | Rejected. | A second path to the agent. A chat could show behaviour that no scored run has. |
+| Chat saves a recording, so a live session can be replayed. | Rejected. | The recording would hold the customer's text unmasked, beside the masked log. |
+| Replay prints the saved trace of a tuning run. | Rejected. | A trace shows what happened once. Replaying the recording runs the agent's code again. |
+| One session that a case and a chat both feed, one message at a time. | Chosen. | `runCase` became a loop over a case's turns on that session, and every runner test passed without a change. |
+
+## Contested point 13: where personal data is masked
+
+`redact` in `src/redact.ts` is the one function that masks personal data. It replaces an email address with `[email]`, an IBAN with `[iban]`, a street and its house number with `[address]`, and any run of nine digits or more with `[card]`, `[phone]` or `[number]`. A run of 13 to 19 digits is a card number, unless it starts with `+` or `00`, which makes it a phone number like any run of 9 to 12 digits. A longer run is a number. It keeps the city after a street, an order number, a status, a date, a price, a size and a request id, because staff follow a log by them. `redacted` passes every string in a value through `redact` and returns a copy.
+
+Digit runs fail closed. A run is digits with at most two spaces, dots, hyphens or brackets between each, and only a digit ends one, so a card number glued to a word is still masked. A date has 8 digits and an order number 4, so the length rule keeps either one alone. A date or an order number that touches a longer number with only a space between joins the run and is masked with it. An exception for dates let a card number typed in the shape of a date through, as an automated review showed, so there is none.
+
+Chat writes through two calls. `conversation` shows what the customer and the agent said, unmasked, because the person at the terminal typed it or is reading the reply to it. `note` shows everything else, and chat passes each note through `redact`: the function-call lines, the status lines, the banner, the closing line and the error of a chat that stopped. The saved log masks the conversation as well. The model and the functions receive the text as it was typed, because `redact` runs only where chat writes, after the session holds the turn. A function can verify a customer only from the email the customer gave.
+
+The scored traces under `traces/` and `results/` and the recordings under `recordings/` are never masked. They hold invented customers only: every email is at `example.com`, which the case loader enforces, and every name, address and order is invented. They must stay exact, because `regrade` and `report` grade a saved trace again and must reproduce its ledger line, and a replay matches each request to its recording byte for byte. Masking would also change grades. A case whose `reply_never_mentions` holds an email would pass a reply that leaked it, because the grader would read `[email]`. One test shows that, and another shows that a chat replaying a tuning case leaves the case's saved trace and its regrade unchanged. The commands that print grades print them exact, since a failure detail can name the address that did not match.
+
+| Alternative | Verdict | Why |
+| --- | --- | --- |
+| Mask the scored traces and recordings too. | Rejected. | A replay would no longer match its recording, a regrade would no longer match the ledger, and a leaked email would grade as a pass. |
+| Mask before the model sees the text. | Rejected. | The functions verify a customer by the email and file the address the customer typed. Masked, neither works. |
+| Mask by field name, such as `email` and `address` in a function result. | Rejected. | It misses what a customer types, which has no field. The patterns catch both. |
+| A named-entity model or a hosted service. | Rejected. | A dependency or a paid call for every line, with no measured gain on the data the shop handles. |
+| One text function wherever chat writes outside the conversation. | Chosen. | One place to fix a miss, and a test for each kind it masks. |
+
 ## Limits
 
 - `check_policy` decides a `damage` topic for a reprint. A damage refund above the limit is rejected only by `file_request`.
@@ -426,7 +476,7 @@ Turn times are nearest-rank, from model time only. The committed run of each age
 - The rule texts and the policy numbers are written separately in `fixtures/shop.yaml`, so a change to a number needs a change to its text.
 - Turn time for the rule-based agent includes the MCP round trip and the fake backend, well under a millisecond in the median. A model-backed turn reports model time only, so it leaves out tool time until recordings capture it.
 - The spend guard checks before a call and counts after it, so the last allowed call can carry the spend past the cap. The next call is refused.
-- The spend file is read and written for each call. Two recording runs at the same time in one checkout could lose a cost. Cases run one after another, so one run is safe.
+- The spend file is read and written for each call. Two recording runs or live chats at the same time in one checkout could lose a cost. Cases run one after another, so one run or one chat is safe.
 - A conversation that fails while recording leaves no recording. Its calls still count in the spend, and recording the case again pays for them again.
 - The CLI builds a live model client once per run, before the first case. A client that checks its provider key when it is built fails before anything is spent.
 - The held-out cases are in the public repository. Anyone who tunes an agent can read them.
@@ -437,3 +487,6 @@ Turn times are nearest-rank, from model time only. The committed run of each age
 - One tuning run of a model agent moves by one or two cases from the last, so a single run cannot show a change worth one case. The tuning used three runs per step.
 - A recording replays one run. It shows what that run did, not how often the agent does it.
 - No check catches a handover made before the customer finished, because the runner stops at the handover and nothing reads what the customer still had to say. That needs a model judge.
+- `redact` masks by pattern, so it misses personal data in a shape it does not know: a name, typed or in `customer_name`; a street without a street word it knows, such as `Fundătura` or `Prelungirea`, or without a house number; a house number in words; a phone number under nine digits; digits split by words; an email written as `ana at example dot com`; an IBAN glued to a word, of which only the digits after its last letter are masked; and any other personal fact in free text, such as a birthday in a gift note. The city after a street stays on purpose.
+- `redact` also masks what is not personal when it matches a pattern: any run of nine digits or more, and a phrase such as `1 more place` that reads as a house number, a word and a street word.
+- The terminal shows the conversation of a chat unmasked, so its scrollback holds what the customer typed.

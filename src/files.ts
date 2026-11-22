@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { parse as parseYaml } from "yaml";
@@ -32,6 +33,11 @@ export async function writeJson<T>(file: string, schema: z.ZodType<T>, value: T)
   await mkdir(dirname(file), { recursive: true });
   await writeFile(file, `${JSON.stringify(parseAs(schema, value, file), null, 2)}\n`);
 }
+
+// A name for one run or one chat: its start time to the second and a random suffix, so two never
+// collide. It holds no run of nine digits, so `redact` leaves it whole when chat prints it.
+export const runName = () =>
+  `${new Date().toISOString().replace(/\.\d+/, "").replaceAll(":", "-")}-${randomBytes(2).toString("hex")}`;
 
 export async function unlessMissing<T, F>(read: Promise<T>, fallback: F): Promise<T | F> {
   try {
