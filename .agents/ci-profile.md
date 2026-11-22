@@ -4,9 +4,9 @@ The `ci-cd` skill reads this file. It records how this repository's CI is set up
 
 ## Setup
 
-- **Provider and runners.** GitHub Actions on GitHub-hosted standard runners (`ubuntu-latest`). While the repository is private, the account's Actions budget stops every job before it starts, and the owner decided to leave it so. The maintainer's machine runs the same commands before each change is handed off. CI on GitHub starts when the repository is public.
-- **Workflows.** `.github/workflows/ci.yml` has one job, `Check`. It checks out, installs pnpm from `packageManager` in `package.json`, sets up Node 24 with the pnpm store cached by `actions/setup-node`, installs with a frozen lockfile, then runs `pnpm typecheck` (`tsc --noEmit`) and `pnpm test` (`vitest run`). The tests are offline against recorded responses, so the job sets no secret and calls no provider. It never runs `pnpm tune`, `pnpm score` or `pnpm regrade`.
-- **How a PR gets CI.** On every `pull_request` event and on every push to `main`. A newer push to the same PR cancels its running check; pushes to `main` are never cancelled. No branch rule or required check exists yet. Before the first public push, run the workflow's steps in a Linux container on the maintainer's machine, so the first public check passes.
+- **Provider and runners.** GitHub Actions on GitHub-hosted standard runners (`ubuntu-latest`). The repository is public, so these runners cost nothing.
+- **Workflows.** `.github/workflows/ci.yml` has one job, `Check`. It checks out, installs pnpm from `packageManager` in `package.json`, sets up Node 24 with the pnpm store cached by `actions/setup-node`, installs with a frozen lockfile, then runs the steps of `pnpm check`, each as its own step: `pnpm typecheck` (`tsc --noEmit`), `pnpm test` (`vitest run`), `pnpm replay` (the tuning set replayed for every agent from its recordings), `pnpm report` (the saved runs regraded) and `pnpm report --check-readme` (the README's table checked against the report). They are offline against recorded responses, so the job sets no secret and calls no provider. It never runs `pnpm tune`, `pnpm score` or `pnpm regrade`.
+- **How a PR gets CI.** On every `pull_request` event and on every push to `main`. A newer push to the same PR cancels its running check; pushes to `main` are never cancelled. No branch rule or required check exists yet.
 - **Routing.** None. Every run runs every check, and vitest picks test files by its default glob, `test/*.test.ts` today.
 - **Log grammar.** None. Each command is its own step.
 
@@ -59,7 +59,7 @@ The scripts read this block. A key left out takes the default in the table below
 
 ## Ruled out
 
-- **Paid runner minutes and larger runners.** The owner raised no Actions budget for the private repository. CI stays on GitHub-hosted standard runners, which cost nothing once the repository is public.
+- **Paid runner minutes and larger runners.** CI stays on GitHub-hosted standard runners, which cost nothing for a public repository.
 - **Running `pnpm score` or any command with `--record` in CI.** `score` adds a line to the scoring ledger, and `--record` calls a paid model provider, which needs the maintainer's approval and a cost estimate first (`AGENTS.md`). `pnpm tune` and `pnpm regrade` without `--record` are offline and may run in CI.
 
 ## Runs
