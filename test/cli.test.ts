@@ -565,15 +565,36 @@ test("report --check-readme fails when the README has no marked table", async ()
   );
 });
 
-test("replay runs the tuning set for every agent that can run offline and skips one without recordings", async () => {
+test("replay runs the rule-based agent and skips model agents without a recordings directory", async () => {
   const root = await testRepo();
 
   const printed = await main(["replay"], root);
 
   expect(printed).toContain("agent: rule-based");
   expect(printed).toContain("tuning: 4 conversations");
-  for (const name of ["plain-gpt-6-luna", "plain-gpt-6.2-sol"]) {
-    expect(printed).toContain(`agent: ${name}\nskipped: recordings/${name}/tuning holds no recordings`);
+  for (const name of [
+    "plain-gpt-6-luna",
+    "plain-gpt-6.2-sol",
+    "sdk-gpt-6-luna",
+    "sdk-gpt-6.2-sol",
+    "sdk-claude-haiku-5-5",
+    "sdk-claude-sonnet-5-5",
+  ]) {
+    expect(printed).toContain(`agent: ${name}\nskipped: recordings/${name} is missing`);
   }
   expect(await readdir(join(root, "traces"))).toEqual(["rule-based"]);
+});
+
+test("replay fails when a model agent's recordings directory is present but a tuning recording is missing", async () => {
+  const root = await testRepo();
+  await mkdir(join(root, "recordings", "plain-gpt-6-luna", "tuning"), { recursive: true });
+
+  await expect(main(["replay"], root)).rejects.toThrow("recordings/plain-gpt-6-luna/tuning/en-asks-for-a-person.json");
+});
+
+test("replay refuses a recordings directory without a registered model agent", async () => {
+  const root = await testRepo();
+  await mkdir(join(root, "recordings", "misspelt-agent"), { recursive: true });
+
+  await expect(main(["replay"], root)).rejects.toThrow("recordings/misspelt-agent has no registered model agent");
 });

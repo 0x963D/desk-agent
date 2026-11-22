@@ -515,6 +515,18 @@ Step 14's 13 live runs, the stopped one included, spent $1.90: $0.03 on Luna and
 
 The tuning set no longer separates the agents after fifteen steps of measuring prompt and case changes against these 19 cases. Use the final-set table from `pnpm report` for scores you quote.
 
+## The AI SDK agent
+
+`sdkAgent` in `src/agents/sdk.ts` runs one non-streaming Vercel AI SDK loop on OpenAI and Anthropic. The two GPT entries let a tuning run compare this loop with the plain agent on the same models. The two Claude entries let a tuning run compare providers with the same loop and matching base input and output prices. The pairs are GPT-6 Luna with Claude Haiku 5.5 and GPT-6.2 Sol with Claude Sonnet 5.5.
+
+Both providers use the existing system prompt, five MCP tools, and low reasoning effort. The session runs tool calls in order and sends the results back with the conversation history. Each customer turn allows six tool rounds, followed by a request with tools forbidden. The final reply uses the provider's native structured output.
+
+Each SDK provider gets a custom `fetch` that hands its JSON request body to the session's `ModelClient` and returns the client's response body to the SDK. The same recorder, replay client, and spend guard cover both providers. Replay compares each body in call order, including any IDs and reasoning blocks carried forward from saved responses. Tests record and replay fresh sessions on both providers to check that request bodies match byte for byte.
+
+The OpenAI live client uses `OPENAI_API_KEY`. The Anthropic live client uses `ANTHROPIC_API_KEY` and prices the Messages API's ordinary input, cache reads, five-minute cache writes, and output separately. The Haiku price table covers prompts through 100,000 total input tokens, including cache reads and writes. [Anthropic pricing](https://platform.claude.com/docs/en/about-claude/pricing)
+
+`pnpm replay` runs the rule-based agent and every registered model agent with a directory under `recordings/`. A model agent with an absent directory is skipped. A present directory requires a recording for every tuning case. Directories that belong to no registered model agent fail the command. The four SDK agents start without recordings.
+
 ## Talking to the agent
 
 `pnpm chat --agent <name>` lets a person type as the customer. `chat` in `src/chat.ts` plays each message through `openSession`, the session that `runCase` plays a case through: the same agent code, the same MCP server and client, and a backend built from the tuning orders, so a chat never sees a held-out order. The terminal shows the customer's and the agent's text as they are, one line per function call with its input and its result cut at 200 characters, then the reply's status, time and cost. When the input is piped rather than typed, chat echoes each customer line, so the output reads as a transcript. Chat ends when the input ends, or when the agent hands over, as a case does, because a person now owns the conversation. A blank line is skipped.
