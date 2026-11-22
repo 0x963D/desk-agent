@@ -64,9 +64,9 @@ Carry a failed verification through to the reply and its outcome. Preserve the s
 
 The latest baseline passed 4 of 18. Of its 14 failed conversations, seven went to an unnecessary handover, three used the wrong reason on a required handover, two failed only the language check, one failed only a required mention, and one left a routine question unfinished. Across those conversations the grader logged eight outcome mismatches, three wrong handover reasons, three wrong-language replies, two missing requests, and two missing mentions. These checks overlap. Two other conversations passed after the backend blocked a request. [Baseline grades](rule-based/2026-11-22T17-13-19-595Z-b9fd/results.json)
 
-## 2. Customer and handover review
+## 2. Review by one model reader who knew which agent wrote each conversation
 
-I read all 108 model conversations, including 172 replies and 31 handovers. I judged the Romanian replies and summaries for meaning, register, and natural phrasing. For handovers I checked what staff received and compared the recorded turns with the case scripts where the runner stopped on transfer. I counted defects by turn and category, and counted each conversation once for a human verdict. An explicit approval assurance, a material fact without a source, privacy guidance that invites a third party to collect verification details, and a transfer that drops needed information all fail the human review. An unsupported gender label in a staff summary also fails because staff may use it to address the customer. [Runner stop condition](../src/runner.ts)
+I read all 108 model conversations, including 172 replies and 31 handovers. I judged the Romanian replies and summaries for meaning, register, and natural phrasing. For handovers I checked what staff received and compared the recorded turns with the case scripts where the runner stopped on transfer. I counted defects by turn and category, and counted each conversation once for that reader's verdict. An explicit approval assurance, a material fact without a source, privacy guidance that invites a third party to collect verification details, and a transfer that drops needed information all fail that reader's review. An unsupported gender label in a staff summary also fails because staff may use it to address the customer. [Runner stop condition](../src/runner.ts)
 
 | Findings by turn and category | Luna | Sol |
 | --- | ---: | ---: |
@@ -116,12 +116,12 @@ The post-dispatch redirects and damage disputes all have valid reasons to transf
 
 Three Romanian cancellation replies after the switch to English were already caught by the language check. I found no additional wrong-language reply. The Romanian reads clearly overall, with some awkward wording. Luna `2bf4` in `ro-dunga-pe-print` at turn 2 uses the equivalent of reporting the stripe itself, an unnatural construction, and switches from familiar to formal address. Sol `433a` in the same case also changes register between turns 1 and 2. Luna `5d02` in `ro-idee-tatuaj` at turn 1 uses *date* for appointment times, which sounds like data in that sentence. These wording issues add no failed conversations to the counts.
 
-| Model | Automatic passes out of 54 | Passed automatically, failed human review | Automatic failures out of 54 | Failed automatically, acceptable to a human |
+| Model | Automatic passes out of 54 | Passed automatically, failed the model reader | Automatic failures out of 54 | Failed automatically, acceptable to the model reader |
 | --- | ---: | ---: | ---: | ---: |
 | Luna | 47 | 17 | 7 | 0 |
 | Sol | 47 | 9 | 7 | 6 |
 
-Luna's 17 are seven in `2bf4`, five in `5d02`, and five in `8824`. Sol's nine are three in each run. Sol's six acceptable failures are the remedy clarification and the safe verification retry in each run. The same damage clarification is appropriate in Luna's three runs, but each contains a separate approval assurance that makes it fail human review.
+Luna's 17 are seven in `2bf4`, five in `5d02`, and five in `8824`. Sol's nine are three in each run. Sol's six acceptable failures are the remedy clarification and the safe verification retry in each run. The same damage clarification is appropriate in Luna's three runs, but each contains a separate approval assurance that makes it fail the model reader.
 
 ## 3. What limits the held-out result
 
