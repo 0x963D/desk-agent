@@ -1,11 +1,11 @@
 import { randomBytes } from "node:crypto";
-import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import type { Agent } from "./agent.ts";
 import { agents, DEFAULT_AGENT } from "./agents/index.ts";
 import { createBackend } from "./backend.ts";
+import { envFile } from "./env.ts";
 import { caseDir, filesIn, loadSplit, readConversations, writeJson } from "./files.ts";
 import { grade, passed } from "./grade.ts";
 import { appendLedger, gitState, hashCaseFiles, ledgerFile, readLedger, type LedgerEntry } from "./ledger.ts";
@@ -232,7 +232,8 @@ export async function main(args: string[], root: string = process.cwd()): Promis
 
 if (import.meta.main) {
   try {
-    if (existsSync(".env")) process.loadEnvFile(".env");
+    const env = envFile(process.cwd());
+    if (env) process.loadEnvFile(env);
     console.log(await main(process.argv.slice(2)));
   } catch (error) {
     console.error(error instanceof Error ? error.message : error);
