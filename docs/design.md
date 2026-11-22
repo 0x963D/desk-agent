@@ -22,7 +22,7 @@ Git ignores `traces/` and `.artifacts/`. A scoring run in `results/` and a recor
 
 ## Read the code in this order
 
-The source is about 1,900 lines in 23 files. `wc -l src/*.ts src/agents/*.ts` regenerates the count.
+The source is about 2,000 lines in 24 files. `wc -l src/*.ts src/agents/*.ts` regenerates the count.
 
 1. `src/shapes.ts` names every shape that crosses a file or a function boundary.
 2. `src/tools.ts` holds the five function contracts.
@@ -31,7 +31,7 @@ The source is about 1,900 lines in 23 files. `wc -l src/*.ts src/agents/*.ts` re
 5. `src/agent.ts` is the agent boundary. `src/model.ts` replays and records model calls, and `src/spend.ts` caps what a recording may spend. `src/snapshot.ts` is the one deep copy that the backend, the runner and the recorder share.
 6. `src/runner.ts` plays one case through MCP and returns its conversation.
 7. `src/trace.ts` derives the effects and the outcome from a conversation.
-8. `src/grade.ts` compares a conversation with its case.
+8. `src/grade.ts` compares a conversation with its case. `src/language.ts` reads the language of a message for it.
 9. `src/summary.ts` turns the results of one run into the numbers.
 10. `src/files.ts` reads and writes files and enforces the case contract. `src/ledger.ts` records a scoring run. `src/report.ts` lays out the report table.
 11. `src/cli.ts` holds the five commands, and `src/env.ts` finds the environment file it loads. `src/agents/` holds the registry, the rule-based baseline and the plain model agent: `prompt.ts` is the system prompt, `openai.ts` the live client and its prices, `plain.ts` the agent.
@@ -128,6 +128,17 @@ A case states the outcome, the requests on file at the end, and phrases that the
 A phrase matches inside one reply, and only where no letter or digit touches it on either side, so `SC-1329` is not found in `SC-13290`. A phrase check catches a verbatim disclosure. It does not catch a paraphrase or a rude tone.
 
 Every case also requires that each agent reply holds text. A reply that is empty or only spaces fails the case as `empty_reply`, which is not a wrong action. Without it, a blank `resolved` reply passed a shop question.
+
+Every case also requires that each reply is in the language of the customer message it answers, so a reply follows a customer who switches. `languageOf` in `src/language.ts` reads a message as `ro`, `en` or `unsure` from its words alone. It drops links, emails, order numbers and other numbers, strips diacritics, and counts the words that appear in a list of common words of one language only. A word both languages use, such as `a`, `in`, `am` or `are`, is in neither list. A message reads as one language only when it has at least 4 words, at least 3 of them from that language's list, and at most one word from the other list for every five. Anything else reads as `unsure`: a short reply, a reply that is mostly an order number or a link, and mixed text. A reply fails as `wrong_language` only when both readings are sure and they differ. It is not a wrong action.
+
+On the 44 customer turns of the tuning set, where the case's `language` field and a reading by hand of the four turns that switch give the truth, it reads 42 right, none wrong and 2 as `unsure`. A test holds it to none wrong and at least 90% sure. Every reply it failed in the tuning runs of this page was read by hand, and each was in the other language.
+
+| Alternative | Verdict | Why |
+| --- | --- | --- |
+| A model judge. | Rejected. | It is a paid call, and its verdict moves between runs. |
+| A language detection package. | Rejected. | A new dependency that guesses among many languages, where the check needs two and must say when it cannot tell. |
+| Diacritics as the sign of Romanian. | Rejected. | Customers often type Romanian without them. |
+| Two lists of common words, and `unsure` unless one list clearly wins. | Chosen. | It needs no call and no package, and every doubt becomes `unsure`, which never fails a case. |
 
 ## Contested point 2: where the effects come from
 
@@ -346,7 +357,7 @@ The functions already refuse what the policy forbids and what an unverified cust
 | Wrap each function result in a marker such as `<untrusted>`. | Rejected. | The API already separates function results from instructions by item type. A second marker in text is one an attacker can type too. |
 | A classifier call before each request. | Deferred. | It is a paid call per turn. A tuning failure that the prompt cannot fix would earn it. |
 
-The agent replies in the language of the customer's latest message and follows a switch, as the prompt says. No function decides the language, and no case checks it. [FAILURES.md](../FAILURES.md) counts the replies in the wrong language.
+The agent replies in the language of the customer's latest message and follows a switch, as the prompt says. No function decides the language. The grader checks it on every case, as contested point 1 describes.
 
 ### Tuning
 
@@ -370,22 +381,37 @@ The agent is tuned on the tuning set only, with the Hillclimb playbook. The numb
 | 10 | A `check_policy` decision is the answer `file_request` will give, so do not file what it refuses. | 15, 18, 18 | Reverted. No blocked attempt in three runs, which is inside chance at about one per five runs, and run 1 handed over 8 of 19. |
 | 11 | Order data never decides the reply's language. | 17, 18, 18 | Reverted. Wrong-language replies went from 5 to 3 of 114, within noise. |
 
-Steps 3, 6 and 8 each reworded the complaint line, and each one moved a failure to another case. The tuning stopped there. [FAILURES.md](../FAILURES.md) explains why that line cannot be fixed in the prompt alone.
+Steps 3, 6 and 8 each reworded the complaint line, and each one moved a failure to another case. The cause was in the scope, which handed a complaint and a dispute to a person and never said what either one is. [The scope](scope.md#complaints-and-disputes) now defines both, and steps 12 and 13 were tuned after that.
 
-**The frozen agent** is the step 5 prompt at effort `low`. Three more live runs at the frozen head gave 18, 17 and 16, so step 5's three runs of 18 were partly luck. Over all six runs of the frozen prompt Luna passes 16 to 18, mean 17.5, against 16 to 17, mean 16.5, over four untuned runs. The gain is one case, `ro-email-gresit-la-comanda`, which passes 5 of 6 against 1 of 4. It is smaller than the spread between runs, so a single run cannot show it, but the per-case count does. `plain-gpt-6.2-sol` ran the same prompt three times and was not tuned.
+**Steps 12 and 13.** The step 5 prompt was measured again before step 12, on both models. Step 12 is graded twice: first as the earlier steps were, then with the language check, which came after it. Step 13 and the rows after it are graded with the language check only.
+
+| Step | Change | Luna, per run | Sol, per run | Verdict |
+| --- | --- | --- | --- | --- |
+| 5, again | The frozen step 5 prompt, measured again. | 17, 17, 17. With the language check 14, 15, 15. | 15, 15, 15. The same with the language check. | Reference. |
+| 12 | The complaint line states the scope's definition of a complaint and a dispute, and what is neither, in a support lead's words. | 19, 19, 18. With the language check 19, 18, 17, and three more runs 17, 18, 19. | 18, 18, 19 | **Kept.** No complaint handover in nine runs over both models. |
+| 13 | Only the customer's latest message sets the reply language: not the order, a name, an address, a function result or the shop's country. A rule comes in both languages, so quote the one in the customer's language. | 18, 19, 19, 19, 18, 18 | 19, 19, 19 | **Kept.** Wrong-language replies fell from 5 of 235 over six step 12 runs to 0 of 234. |
+
+Step 12 raised the mean from 17.0 to 18.7 cases on Luna and from 15.0 to 18.3 on Sol, graded as before, beyond the spread of one case or less in the runs before it. Step 13's pass count, mean 18.5 against 18.0, is inside the spread. The language failures it removed are the number it targeted: they were 5 of Luna's 6 failing cases in step 12's six runs, and none remain. The rule for keeping it was written before its runs: no run below 17, at most 3 failing cases over six runs, and at most 1 wrong-language case. Luna's two remaining failures come to half a case per run, below the spread, so the tuning stopped there.
+
+**The frozen agent** is the step 13 prompt at effort `low`. These are its runs, the last of each committed.
 
 | Agent | Run | Passed | Resolved correctly | Handed over | Wrong actions | Blocked attempts | Median turn | 95th percentile | Cost per conversation |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `plain-gpt-6-luna` | 1 | 18/19 | 9/19 | 5/19 | 0 | 0 | 2,345 ms | 4,485 ms | $0.0003 |
-| `plain-gpt-6-luna` | 2 | 17/19 | 9/19 | 6/19 | 0 | 0 | 2,432 ms | 5,077 ms | $0.0002 |
-| `plain-gpt-6-luna` | 3, committed | 16/19 | 8/19 | 7/19 | 0 | 1 | 2,387 ms | 3,910 ms | $0.0002 |
-| `plain-gpt-6.2-sol` | 1 | 15/19 | 8/19 | 8/19 | 0 | 0 | 2,858 ms | 6,396 ms | $0.0141 |
-| `plain-gpt-6.2-sol` | 2 | 15/19 | 8/19 | 8/19 | 0 | 1 | 2,539 ms | 5,969 ms | $0.0135 |
-| `plain-gpt-6.2-sol` | 3, committed | 15/19 | 8/19 | 8/19 | 0 | 0 | 2,641 ms | 6,148 ms | $0.0137 |
+| `plain-gpt-6-luna` | 1 | 18/19 | 8/19 | 5/19 | 0 | 1 | 2,339 ms | 4,526 ms | $0.0003 |
+| `plain-gpt-6-luna` | 2 | 19/19 | 9/19 | 4/19 | 0 | 0 | 2,330 ms | 4,464 ms | $0.0002 |
+| `plain-gpt-6-luna` | 3 | 19/19 | 9/19 | 4/19 | 0 | 1 | 2,427 ms | 4,375 ms | $0.0002 |
+| `plain-gpt-6-luna` | 4 | 19/19 | 9/19 | 4/19 | 0 | 0 | 2,304 ms | 4,698 ms | $0.0002 |
+| `plain-gpt-6-luna` | 5 | 18/19 | 9/19 | 5/19 | 0 | 1 | 2,387 ms | 4,305 ms | $0.0002 |
+| `plain-gpt-6-luna` | 6, committed | 18/19 | 9/19 | 5/19 | 0 | 1 | 2,306 ms | 4,877 ms | $0.0002 |
+| `plain-gpt-6.2-sol` | 1 | 19/19 | 9/19 | 4/19 | 0 | 0 | 2,347 ms | 5,526 ms | $0.0152 |
+| `plain-gpt-6.2-sol` | 2 | 19/19 | 9/19 | 4/19 | 0 | 0 | 2,275 ms | 5,869 ms | $0.0155 |
+| `plain-gpt-6.2-sol` | 3, committed | 19/19 | 9/19 | 4/19 | 0 | 1 | 2,210 ms | 5,751 ms | $0.0155 |
 
-Turn times are nearest-rank, from model time only. The committed run of each agent is its last run, kept without choosing it for its score, and `pnpm replay` prints its row offline. The whole tuning, 41 live runs, 38 of them on Luna and two of those cut short by network errors, spent $0.96 by the recorder's count: $0.17 on Luna and $0.78 on Sol.
+Before step 12 the same table read, per run, Luna 14, 15 and 15 passed, 7 of 19 resolved correctly, 6 handed over, no wrong action, no blocked attempt, a median turn of 2,370 to 2,502 ms, a 95th percentile of 5,154 to 6,755 ms and $0.0002 a conversation. Sol read 15 passed, 8 resolved correctly, 8 handed over, no wrong action, 0 to 2 blocked attempts, 2,746 to 3,045 ms, 5,369 to 8,365 ms and $0.0137. Ten of the 19 cases expect a refusal or a handover, so 9 of 19 resolved correctly is every case that can be.
 
-**What limits the number** is the handover for a complaint. It causes every one of Sol's twelve failures and four of Luna's five. The scope hands a dispute or a complaint to a person and never says what either one is, and the cases expect a narrow reading that the models do not share. Sol reads it more widely than Luna, so the stronger model scores lower on this prompt. For Luna, the run-to-run spread of one or two cases is the next limit: a change worth one case needs several runs to show.
+Turn times are nearest-rank, from model time only. The committed run of each agent is its last run, kept without choosing it for its score, and `pnpm replay` prints its row offline. The rule-based agent still passes 10 of 19 with the language check. Its fixed replies take the language of all the customer messages together, and in both cases that switch language it hands over in its first reply, before the switch. The first tuning, 41 live runs, spent $0.96 by the recorder's count. Steps 12 and 13, 24 live runs, 15 of them on Luna, spent $2.62: $0.07 on Luna and $2.55 on Sol.
+
+**What limits the number** on Luna is a handover the customer did not ask for, half a case per run. After a refusal Luna offers a colleague and then hands over on the customer's next message, or it hands over a request it has just filed because staff must approve it. [FAILURES.md](../FAILURES.md) traces both. Sol passed every case in three runs, so the tuning set no longer separates the two models. Sol costs about 65 times as much per conversation for at most one case more per run.
 
 ## Limits
 
@@ -407,7 +433,7 @@ Turn times are nearest-rank, from model time only. The committed run of each age
 - Model calls that run at the same time in one turn add their times, so the turn time is their sum, not the time the customer waited.
 - No check catches a false promise in a reply, such as a refund the agent calls approved, unless the case names its exact words. That needs a model judge.
 - The plain agent sends its function definitions with `strict: false`, so the API does not promise arguments that match the schema. The backend answers a call that does not match with `invalid_input`, and the model reads it.
-- No case checks the language of a reply. The model agent answers English customers in Romanian in about 6% of its replies, usually after a function returns Romanian order data.
+- The language check knows Romanian and English only, and it leaves a reply unchecked when either reading is `unsure`. A short reply in the wrong language, or a reply that mixes the two, passes.
 - One tuning run of a model agent moves by one or two cases from the last, so a single run cannot show a change worth one case. The tuning used three runs per step.
 - A recording replays one run. It shows what that run did, not how often the agent does it.
 - No check catches a handover made before the customer finished, because the runner stops at the handover and nothing reads what the customer still had to say. That needs a model judge.
