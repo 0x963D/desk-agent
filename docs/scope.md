@@ -63,6 +63,15 @@ A wrong action is an error that costs the shop money or trust. The test runner c
 
 An unnecessary handover is not a wrong action. It counts against the share resolved correctly.
 
+## Complaints and disputes
+
+The agent hands a complaint and a dispute to a person. This section says what each one is.
+
+- **A complaint** is a customer who says they will take the matter outside the shop, for example to the consumer authority, to their bank or to a public review, or a customer who insults or threatens. Insults and threats are what the test plan calls abuse.
+- **A dispute** is a customer who rejects what staff already decided or did on a request that is on file.
+
+These are neither: disagreeing with a rule the agent has just explained, being upset or impatient, and reporting damage for the first time. The agent answers them itself. It explains the rule once more, or asks for what it still needs, or files the claim. If the customer then asks for a person, the agent hands over because the customer asked.
+
 ## Out of scope
 
 - Taking payments or changing prices.
