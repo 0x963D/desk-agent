@@ -61,7 +61,7 @@ test("the printed summary shows each rate as a count and a share", () => {
       "  handover rate          1/4 (25%)",
       "  wrong-action rate      1/4 (25%)",
       "  blocked attempts       1/4 (25%)",
-      "  agent turn time        median 300.00 ms, p95 2000.00 ms",
+      "  agent turn time        nearest-rank median 300.00 ms, p95 2000.00 ms",
       "  cost per conversation  $0.0300",
     ].join("\n"),
   );

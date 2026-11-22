@@ -79,7 +79,7 @@ export function formatSummary(summary: Summary): string {
     `  handover rate          ${share(summary.handed_over)}`,
     `  wrong-action rate      ${share(summary.wrong_action)}`,
     `  blocked attempts       ${share(summary.blocked_attempt)}`,
-    `  agent turn time        median ${summary.turn_ms_p50.toFixed(2)} ms, p95 ${summary.turn_ms_p95.toFixed(2)} ms`,
+    `  agent turn time        nearest-rank median ${summary.turn_ms_p50.toFixed(2)} ms, p95 ${summary.turn_ms_p95.toFixed(2)} ms`,
     `  cost per conversation  $${summary.cost_per_conversation_usd.toFixed(4)}`,
   ].join("\n");
 }

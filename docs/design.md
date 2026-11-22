@@ -238,6 +238,8 @@ The runner measures at the model boundary. It wraps the model client before it h
 | The recorded time and cost, reported by the agent. | Rejected. | An agent that left out `usage` reported two calls of 125 ms and $0.02 each as 0 ms and $0. |
 | The recorded time and cost, summed by the runner at the model client it hands the agent. | Chosen. | A live run and its replay add up the same recorded numbers, and the agent's code has no say in them. |
 
+The summary gives the nearest-rank median and 95th percentile of all agent turns in the run: the time at rank ⌈p × n⌉ of the n sorted times. Each number is therefore a time that a real turn took, and with an even count the median is the lower of the two middle turns, not their mean. The printed summary says `nearest-rank median` so that nobody reads it as the mean of the middle pair.
+
 ## Contested point 9: what a run leaves behind
 
 Each run writes its own directory, named by its start time and a random suffix. Conversations are written as each case finishes, then `results.json` and `summary.json`. A second run never touches the first.
