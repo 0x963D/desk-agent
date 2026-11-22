@@ -34,20 +34,18 @@ const COMPOUND = new RegExp(
   "giu",
 );
 
-// An order number and an ISO date are matched first and kept whole, so no run of digits can take
-// one in. Any other run is digits with at most two spaces, dots, hyphens or brackets between each,
-// and an optional `+`. Only a digit ends a run, so a letter that touches a card number hides nothing.
-const KEPT = String.raw`SC-\d{4}(?!\d)|\d{4}-\d{2}-\d{2}(?!\d)`;
-const NUMBERS = new RegExp(String.raw`${KEPT}|\+?\(?(?<!\d)\d(?:[ .()-]{0,2}\d)*\)?(?!\d)`, "gu");
-const WHOLLY_KEPT = new RegExp(String.raw`^(?:${KEPT})$`);
+// Digits with at most two spaces, dots, hyphens or brackets between each, and an optional `+`.
+// Only a digit ends a run, so a letter that touches a card number hides nothing.
+const NUMBERS = /\+?\(?(?<!\d)\d(?:[ .()-]{0,2}\d)*\)?(?!\d)/gu;
 
-// A run of nine digits or more is masked: 13 to 19 as a card number, otherwise as a phone number.
-// A shorter run stays, such as a price, a house number or a size.
+// A run of nine digits or more is masked, whatever it looks like. A shorter run stays: an order
+// number, a date, a price, a house number or a size. A date or an order number that touches a
+// longer number by a space is masked with it, because the run cannot tell where one ends.
 function maskDigits(run: string): string {
-  if (WHOLLY_KEPT.test(run)) return run;
   const digits = run.replace(/\D/g, "").length;
   if (digits < 9) return run;
-  return digits >= 13 && digits <= 19 && !/^(?:\+|00)/.test(run) ? "[card]" : "[phone]";
+  if (/^(?:\+|00)/.test(run) || digits <= 12) return "[phone]";
+  return digits <= 19 ? "[card]" : "[number]";
 }
 
 export function redact(text: string): string {
