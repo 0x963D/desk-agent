@@ -21,12 +21,14 @@ Nothing here calls a model or the network unless a command is given `--record`, 
 	pnpm mcp                     # serve the five functions over stdio, on the tuning orders
 	pnpm chat --agent <name>     # type as the customer and the agent answers, on the tuning orders
 	pnpm chat --agent <name> --replay <tuning case id>   # play a tuning case's recording, offline
+	pnpm audit:packet --out <dir> --key <file> [--seed <text>]   # a blind packet of the scored model conversations
+	pnpm audit:agreement --key <file> <verdict file>...          # readers against the grader and against each other
 
 Git ignores `traces/`, which holds the tuning runs and the chat session logs, and `.artifacts/`. A scoring run in `results/` and a recording in `recordings/` are meant to be committed.
 
 ## Read the code in this order
 
-The source is about 2,350 lines in 26 files. `wc -l src/*.ts src/agents/*.ts` regenerates the count.
+The source is about 2,700 lines in 28 files. `wc -l src/*.ts src/agents/*.ts` regenerates the count.
 
 1. `src/shapes.ts` names every shape that crosses a file or a function boundary.
 2. `src/tools.ts` holds the five function contracts.
@@ -39,7 +41,8 @@ The source is about 2,350 lines in 26 files. `wc -l src/*.ts src/agents/*.ts` re
 9. `src/summary.ts` turns the results of one run into the numbers.
 10. `src/files.ts` reads and writes files and enforces the case contract. `src/ledger.ts` records a scoring run. `src/report.ts` lays out the report and the run tables and finds the README's table.
 11. `src/chat.ts` lets a person talk to an agent, and `src/redact.ts` masks the personal data in what it logs and prints.
-12. `src/cli.ts` holds the six commands, and `src/env.ts` finds the environment file it loads. `src/agents/` holds the registry, the rule-based baseline and the plain model agent: `prompt.ts` is the system prompt, `openai.ts` the live client and its prices, `plain.ts` the agent.
+12. `src/packet.ts` builds the blind packet for readers, and `src/agreement.ts` loads their verdicts and measures how far they agree.
+13. `src/cli.ts` holds the eight commands, and `src/env.ts` finds the environment file it loads. `src/agents/` holds the registry, the rule-based baseline and the plain model agent: `prompt.ts` is the system prompt, `openai.ts` the live client and its prices, `plain.ts` the agent.
 
 ## The shapes
 
@@ -57,6 +60,8 @@ Every shape is a zod schema in `src/shapes.ts`, and its TypeScript type is deriv
 | `Summary` | The numbers for one run of one split. | `<run>/summary.json` |
 | `LedgerEntry` | One scoring run: the time, the agent, the commit, the tree state, a hash of the held-out cases and the summary. | `results/ledger.jsonl` |
 | `ChatLog` | One `pnpm chat` session: the conversation id, the agent, the replayed case if any, the start time and the turns, every string in them masked. | `traces/chat/<agent>/<session>.json` |
+| `AuditKey` | The seed of a blind packet and, for each random id in it, the agent, the run and the case. | A path given by `--key`, outside the packet. |
+| `Verdict` | One reader's judgement of one conversation: the id, `acceptable`, one field per criterion and a note. | `results/audit/<reader>.jsonl` |
 
 Seven choices in the shapes and the loader remove states that should not exist.
 
@@ -307,6 +312,25 @@ README.md shows the `pnpm report --markdown` table between the lines `<!-- repor
 
 `docker compose run --rm check` builds the image in `Dockerfile` and runs `pnpm check`: the typecheck, the tests, the replay, the report and the README check. The build needs the network, to fetch the pinned `node:24.22.2-slim` image, Git, pnpm and the locked dependencies. The run does not: `compose.yaml` sets `network_mode: none`, so a test or a command that reached for a provider would fail the check. `pull_policy: build` builds again on every run, so the image never lags behind the checkout. `.dockerignore` leaves out `.git`, `.env` and the local run folders. The tests still need the `git` binary, because the score tests make throwaway repositories.
 
+## The blind audit
+
+The grader checks what a case can state without judgement. A false promise, a fact with no source, a handover before the customer said what they need and a rude reply pass it. The audit has readers judge every scored conversation of the model agents against [the rubric](judging.md), without knowing which agent wrote it, and measures how far they agree with each other and with the grader.
+
+`pnpm audit:packet --out <dir> --key <file>` reads every ledger line of an agent with a live model client, refuses a run that holds fewer conversations than its line scored, and writes one Markdown file per conversation. A file shows the numbered turns, each function call with its input and its result under the turn that made it, and the handover. It leaves out the agent, the run, the case id, the conversation id, the declared status, the time and the cost. The cost alone names the model, because one costs about 65 times the other. Each file is named by a random id. The packet also holds copies of the scope and the rubric, and `verdicts.jsonl`, one blank line per conversation in the shuffled order.
+
+The ids and the order come from SHA-256 of the seed and a counter, so `--seed` rebuilds the same packet byte for byte. Without `--seed` a random one is drawn and printed. The key records the seed and maps each id to its agent, run and case. The command refuses a key inside the packet, a packet folder that is not empty, and a folder inside the repository that Git does not ignore.
+
+`pnpm audit:agreement --key <file> <verdict file>...` validates each verdict file against the key: every id once, no unknown id, every field filled, `acceptable` true exactly when every criterion holds, and a note that names the turn of a failure. The file name names the reader. For each reader it prints the acceptable conversations per agent beside the grader's passes from the saved `results.json`, the agreement with the grader as a count, Cohen's kappa and a two-by-two table, and the criteria that failed most. For each pair of readers it prints their agreement on `acceptable`, Cohen's kappa and the ids where they differ. Kappa is undefined when both gave one answer to every conversation, and the report says so instead of dividing by zero.
+
+| Alternative | Verdict | Why |
+| --- | --- | --- |
+| Show the agent's declared status. | Rejected. | It is the agent's own claim of the outcome and anchors the reader. The customer never sees it. |
+| Show the time and the cost of each turn. | Rejected. | The cost names the model. |
+| Drop function results that hold an error, such as `invalid_input`. | Rejected. | A malformed call is behaviour a reader should judge, even though only one agent makes them. |
+| Number the files 1 to 108. | Rejected. | A number invites reading in order, and the order is what the shuffle hides. |
+
+The audit is blind only to a reader who has nothing but the packet. The saved conversations are in this repository, so anyone with the repository can find a reply's agent with a text search. The seed rebuilds the key from the code, so it is as secret as the key. Behaviour still differs by agent: in the six held-out runs, 12 of one agent's 54 conversations hold an `invalid_input` result and none of the other's, and one agent calls `check_policy` in 32 of its 54 conversations where the other calls it in 20. The reply length, the quotation marks and the language of the handover summaries are close between the two. A reader sees each customer script six times and could sort the six into two groups of three.
+
 ## The rule-based agent
 
 `src/agents/rule-based.ts` is a baseline of keyword rules, kept small on purpose. It hands over when the customer asks for a person or for a commission or a tattoo. It asks for the order number and the email until it has both. It then answers a status question from `lookup_order`, or files a cancellation or a return. It hands over on `unavailable` and on a `large_refund` rejection, and it refuses on any other rejection. Any other message goes to a person with the reason `staff_decision`. It never calls `check_policy`, and it files no damage claim and no delivery change. A later agent has a floor to beat.
@@ -481,12 +505,12 @@ The scored traces under `traces/` and `results/` and the recordings under `recor
 - The CLI builds a live model client once per run, before the first case. A client that checks its provider key when it is built fails before anything is spent.
 - The held-out cases are in the public repository. Anyone who tunes an agent can read them.
 - Model calls that run at the same time in one turn add their times, so the turn time is their sum, not the time the customer waited.
-- No check catches a false promise in a reply, such as a refund the agent calls approved, unless the case names its exact words. That needs a model judge.
+- No check catches a false promise in a reply, such as a refund the agent calls approved, unless the case names its exact words. [The blind audit](#the-blind-audit) asks readers to catch it.
 - The plain agent sends its function definitions with `strict: false`, so the API does not promise arguments that match the schema. The backend answers a call that does not match with `invalid_input`, and the model reads it.
 - The language check knows Romanian and English only, and it leaves a reply unchecked when either reading is `unsure`. A short reply in the wrong language, or a reply that mixes the two, passes.
 - One tuning run of a model agent moves by one or two cases from the last, so a single run cannot show a change worth one case. The tuning used three runs per step.
 - A recording replays one run. It shows what that run did, not how often the agent does it.
-- No check catches a handover made before the customer finished, because the runner stops at the handover and nothing reads what the customer still had to say. That needs a model judge.
+- No check catches a handover made before the customer finished, because the runner stops at the handover and nothing reads what the customer still had to say. [The blind audit](#the-blind-audit) asks readers to catch it.
 - `redact` masks by pattern, so it misses personal data in a shape it does not know: a name, typed or in `customer_name`; a street without a street word it knows, such as `Fundătura` or `Prelungirea`, or without a house number; a house number in words; a phone number under nine digits; digits split by words; an email written as `ana at example dot com`; an IBAN glued to a word, of which only the digits after its last letter are masked; and any other personal fact in free text, such as a birthday in a gift note. The city after a street stays on purpose.
 - `redact` also masks what is not personal when it matches a pattern: any run of nine digits or more, and a phrase such as `1 more place` that reads as a house number, a word and a street word.
 - The terminal shows the conversation of a chat unmasked, so its scrollback holds what the customer typed.

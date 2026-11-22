@@ -5,20 +5,32 @@ import { parseArgs } from "node:util";
 import type { Agent } from "./agent.ts";
 import { agents, DEFAULT_AGENT } from "./agents/index.ts";
 import { createBackend } from "./backend.ts";
+import { auditAgreement } from "./agreement.ts";
 import { chat, type ChatOutput } from "./chat.ts";
 import { envFile } from "./env.ts";
 import { caseDir, filesIn, loadSplit, readConversations, runName, writeJson } from "./files.ts";
 import { grade, passed } from "./grade.ts";
-import { appendLedger, gitState, hashCaseFiles, ledgerFile, readLedger, type LedgerEntry } from "./ledger.ts";
+import {
+  appendLedger,
+  gitState,
+  hashCaseFiles,
+  ledgerFile,
+  readLedger,
+  scoredRunDir,
+  type LedgerEntry,
+} from "./ledger.ts";
 import { recordedModel, recordingDir, recordingPath, recordModel, type Recorder } from "./model.ts";
+import { writePacket } from "./packet.ts";
 import { README_END, README_START, readmeTable, reportTable, runsTable, type ReportRow } from "./report.ts";
 import { runCase } from "./runner.ts";
 import { Conversation, TestResult, type Split, type TestCase } from "./shapes.ts";
 import { spendCap, spendFile, spendGuard } from "./spend.ts";
 import { formatSummary, Summary, summarize } from "./summary.ts";
 
-const USAGE =
-  "usage: tune [--agent <name>] [--record] | score [--agent <name>] [--record] | regrade <run directory> | replay | report [--markdown] | report --runs [--markdown] | report --check-readme | chat [--agent <name>] [--replay <tuning case id>]";
+const USAGE = [
+  "usage: tune [--agent <name>] [--record] | score [--agent <name>] [--record] | regrade <run directory> | replay | report [--markdown] | report --runs [--markdown] | report --check-readme | chat [--agent <name>] [--replay <tuning case id>]",
+  "       | audit-packet --out <dir> --key <file> [--seed <text>] | audit-agreement --key <file> <verdict file>...",
+].join("\n");
 
 // The terminal `pnpm chat` talks through. Standard input is opened only when a live chat reads it.
 export type Terminal = { lines(): AsyncIterable<string>; interactive: boolean; output: ChatOutput };
@@ -137,11 +149,7 @@ async function replay(root: string): Promise<string> {
 }
 
 async function regradeScored(root: string, cases: TestCase[], entry: LedgerEntry): Promise<void> {
-  const dir = resolve(root, entry.run);
-  if (relative(join(root, "results"), dir).startsWith("..")) {
-    throw new Error(`the ledger line of ${entry.time} names ${entry.run}, which is not a run under results/`);
-  }
-  const conversations = await readConversations(dir);
+  const conversations = await readConversations(scoredRunDir(root, entry.run));
   if (conversations.length === 0) {
     throw new Error(`${entry.run}, the latest scored run of ${entry.agent}, holds no saved conversations`);
   }
@@ -242,6 +250,9 @@ export async function main(args: string[], root: string = process.cwd(), termina
         replay: { type: "string" },
         runs: { type: "boolean" },
         "check-readme": { type: "boolean" },
+        out: { type: "string" },
+        key: { type: "string" },
+        seed: { type: "string" },
       },
       allowPositionals: true,
       strict: true,
@@ -251,10 +262,17 @@ export async function main(args: string[], root: string = process.cwd(), termina
   }
   const [command, ...rest] = parsed.positionals;
   const { values } = parsed;
+  // True when no option outside `allowed` was given.
+  const only = (...allowed: string[]) => Object.keys(values).every((option) => allowed.includes(option));
   // True when the command got `count` positionals and no option outside `allowed`.
-  const takes = (count: number, ...allowed: string[]) =>
-    rest.length === count && Object.keys(values).every((option) => allowed.includes(option));
+  const takes = (count: number, ...allowed: string[]) => rest.length === count && only(...allowed);
 
+  if (command === "audit-packet" && values.out && values.key && takes(0, "out", "key", "seed")) {
+    return writePacket(root, { out: resolve(root, values.out), key: resolve(root, values.key), seed: values.seed });
+  }
+  if (command === "audit-agreement" && values.key && rest.length > 0 && only("key")) {
+    return auditAgreement(root, resolve(root, values.key), rest.map((file) => resolve(root, file)));
+  }
   if (command === "report" && values["check-readme"] && takes(0, "check-readme")) return checkReadme(root);
   if (command === "report" && values.runs && takes(0, "runs", "markdown")) return runsReport(root, values.markdown ?? false);
   if (command === "report" && takes(0, "markdown")) return scoreReport(root, values.markdown ?? false);

@@ -258,7 +258,6 @@ export const TestCase = z
   });
 export type TestCase = z.infer<typeof TestCase>;
 
-
 export const Failure = z.strictObject({
   kind: z.enum([
     "wrong_handover_reason",
@@ -285,3 +284,36 @@ export const TestResult = z.strictObject({
   cost_usd: z.number().nonnegative(),
 });
 export type TestResult = z.infer<typeof TestResult>;
+
+export const Criterion = z.enum(["outcome", "requests", "promises", "privacy", "facts", "handover", "reply"]);
+export type Criterion = z.infer<typeof Criterion>;
+
+const criterionFields = Object.fromEntries(Criterion.options.map((name) => [name, z.boolean()])) as Record<
+  Criterion,
+  z.ZodBoolean
+>;
+
+export const Verdict = z
+  .strictObject({ id: z.string().min(1), acceptable: z.boolean(), ...criterionFields, note: FilledText })
+  .refine((v) => v.acceptable === Criterion.options.every((name) => v[name]), {
+    message: "acceptable is true exactly when no criterion fails",
+    path: ["acceptable"],
+  })
+  .refine((v) => v.acceptable || /\bturn \d+\b/i.test(v.note), {
+    message: "a note on a failure names the turn, such as turn 4",
+    path: ["note"],
+  });
+export type Verdict = z.infer<typeof Verdict>;
+
+export const AuditKey = z
+  .strictObject({
+    seed: z.string().min(1),
+    conversations: z.array(
+      z.strictObject({ id: z.string().min(1), agent: z.string(), run: z.string(), case_id: z.string() }),
+    ),
+  })
+  .refine((key) => new Set(key.conversations.map((c) => c.id)).size === key.conversations.length, {
+    message: "each id appears once",
+    path: ["conversations"],
+  });
+export type AuditKey = z.infer<typeof AuditKey>;
