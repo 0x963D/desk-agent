@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import { main } from "../src/cli.ts";
 import { readJson } from "../src/files.ts";
-import { hashCaseFiles, LedgerEntry } from "../src/ledger.ts";
+import { hashCaseFiles, hashCodeAt, LedgerEntry } from "../src/ledger.ts";
 import { TestResult } from "../src/shapes.ts";
 import { commitAll, testRepo } from "./helpers.ts";
 
@@ -292,8 +292,8 @@ const scoredRepo = async () => {
 };
 
 const MARKDOWN_HEAD = [
-  "| agent | conversations | passed every check | resolved correctly | handover rate | wrong-action rate | blocked attempts | median turn | p95 turn | cost per conversation | commit | times scored |",
-  "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: |",
+  "| agent | runs | conversations | passed every check | resolved correctly | handover rate | wrong-action rate | blocked attempts | median turn | p95 turn | cost per conversation | code | latest commit | times scored |",
+  "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | ---: |",
 ];
 
 const tree = async (root: string) => {
@@ -301,12 +301,18 @@ const tree = async (root: string) => {
   return Promise.all(files.map(async (file) => [file, await readFile(join(root, file)).catch(() => "dir")] as const));
 };
 
-test("report prints one row per agent from its latest scored run, and writes nothing", async () => {
+const reportRows = async (root: string) =>
+  (await main(["report", "--markdown"], root))
+    .split("\n")
+    .filter((line) => line.startsWith("| rule-based |"))
+    .map((line) => line.slice(2, -2).split(" | "));
+
+test("report prints one row per agent, here over its one scored run, and writes nothing", async () => {
   const { root, commit } = await scoredRepo();
   const [entry] = await ledger(root);
   const turns = [entry?.summary.turn_ms_p50, entry?.summary.turn_ms_p95].map((ms) => `${ms?.toFixed(2)} ms`);
-  const cells = ["rule-based", "2", "2/2 (100%)", "2/2 (100%)", "0/2 (0%)", "0/2 (0%)", "0/2 (0%)", ...turns];
-  const row = [...cells, "$0.0000", commit, "1"];
+  const shares = ["2/2 (100%), per run 2", "2/2 (100%), per run 2", "0/2 (0%), per run 0", "0/2 (0%), per run 0", "0/2 (0%), per run 0"];
+  const row = ["rule-based", "1", "2", ...shares, ...turns, "$0.0000", entry!.code_sha256!.slice(0, 12), commit, "1"];
   const before = await tree(root);
 
   const markdown = await main(["report", "--markdown"], root);
@@ -320,15 +326,65 @@ test("report prints one row per agent from its latest scored run, and writes not
   expect(await tree(root)).toEqual(before);
 });
 
-test("report counts every score of an agent and shows the latest one", async () => {
+test("a row covers every run of the agent with the same cases and code, as a total and the range per run", async () => {
   const { root, commit } = await scoredRepo();
   await main(["score"], root);
+  const [first, second] = await ledger(root);
 
-  const markdown = await main(["report", "--markdown"], root);
+  const [row] = await reportRows(root);
 
-  const rows = markdown.split("\n").filter((line) => line.startsWith("| rule-based |"));
-  expect(rows).toHaveLength(1);
-  expect(rows[0]?.endsWith(`| ${commit} (dirty) | 2 |`)).toBe(true);
+  expect(second?.dirty).toBe(true);
+  expect(second?.code_sha256).toBe(first?.code_sha256);
+  expect(row?.slice(0, 5)).toEqual(["rule-based", "2", "4", "4/4 (100%), per run 2", "4/4 (100%), per run 2"]);
+  expect(row?.slice(-2)).toEqual([`${commit} (dirty)`, "2"]);
+  // The earlier run is regraded too, so a ledger line that no longer agrees with it stops the report.
+  const changed = { ...first, summary: { ...first!.summary, passed: 1 } };
+  await writeFile(join(root, "results", "ledger.jsonl"), `${JSON.stringify(changed)}\n${JSON.stringify(second)}\n`);
+  await expect(main(["report"], root)).rejects.toThrow(/passed grades to 2 but the ledger records 1/);
+});
+
+test("a run with other code or other cases is not in the row, and still counts as a time scored", async () => {
+  const { root } = await scoredRepo();
+  await mkdir(join(root, "src"));
+  await writeFile(join(root, "src", "note.ts"), "// A change to the code.\n");
+  await main(["score"], root);
+  const [atFirst, withNote] = await ledger(root);
+  const caseFile = join(root, "cases", "held-out", "ro-unde-e-comanda.yaml");
+  await writeFile(caseFile, `${await readFile(caseFile, "utf8")}# edited\n`);
+  await main(["score"], root);
+  const [, , withEdit] = await ledger(root);
+
+  expect(withNote?.code_sha256).not.toBe(atFirst?.code_sha256);
+  expect(withEdit?.code_sha256).toBe(withNote?.code_sha256);
+  expect(withEdit?.cases_sha256).not.toBe(withNote?.cases_sha256);
+  const [row] = await reportRows(root);
+  expect(row?.slice(0, 3)).toEqual(["rule-based", "1", "2"]);
+  expect(row?.at(-1)).toBe("3");
+});
+
+test("a line without a code hash stands alone until pnpm ledger:code gives it one from Git", async () => {
+  const { root } = await scoredRepo();
+  commitAll(root);
+  await main(["score"], root);
+  const lines = await ledger(root);
+  for (const entry of lines) expect(entry.code_sha256).toBe(hashCodeAt(root, entry.commit, "held-out"));
+  const ledgerFile = join(root, "results", "ledger.jsonl");
+  await writeFile(ledgerFile, lines.map(({ code_sha256, ...old }) => `${JSON.stringify(old)}\n`).join(""));
+
+  const [alone] = await reportRows(root);
+  const written = await main(["ledger-code"], root);
+  const [together] = await reportRows(root);
+  const checked = await main(["ledger-code"], root);
+
+  expect(alone?.slice(1, 3)).toEqual(["1", "2"]);
+  expect(alone?.at(-3)).toBe("unknown");
+  expect(written).toBe("results/ledger-code.json: 2 lines added, 0 checked against Git");
+  expect(together?.slice(1, 3)).toEqual(["2", "4"]);
+  expect(together?.at(-3)).toBe(lines[0]!.code_sha256!.slice(0, 12));
+  expect(checked).toBe("results/ledger-code.json: 0 lines added, 2 checked against Git");
+  const codeFile = join(root, "results", "ledger-code.json");
+  await writeFile(codeFile, (await readFile(codeFile, "utf8")).replace(lines[0]!.code_sha256!, "0".repeat(64)));
+  await expect(main(["ledger-code"], root)).rejects.toThrow(/gives .* the code hash 0{64}, but its commit/);
 });
 
 test("report stops when a regraded run disagrees with its ledger line", async () => {
@@ -374,6 +430,7 @@ test("report --runs prints every ledger line, oldest first, from the ledger alon
     commit,
     dirty,
     entry.cases_sha256.slice(0, 12),
+    entry.code_sha256!.slice(0, 12),
     "2",
     "2",
     "2",
@@ -389,6 +446,7 @@ test("report --runs prints every ledger line, oldest first, from the ledger alon
     "commit",
     "dirty",
     "cases hash",
+    "code hash",
     "conversations",
     "passed",
     "resolved correctly",
@@ -398,7 +456,7 @@ test("report --runs prints every ledger line, oldest first, from the ledger alon
   ]);
   expect(rest.slice(0, 2).map((line) => line.split(/ {2,}/))).toEqual([row(lines[0]!, "no"), row(lines[1]!, "yes")]);
   expect(markdown.split("\n").slice(1, 4)).toEqual([
-    "| --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+    "| --- | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
     `| ${row(lines[0]!, "no").join(" | ")} |`,
     `| ${row(lines[1]!, "yes").join(" | ")} |`,
   ]);
@@ -428,10 +486,10 @@ test("report --check-readme passes while the README shows the current report tab
 test("report --check-readme fails when a number in the README differs from the report", async () => {
   const { root } = await scoredRepo();
   const table = await main(["report", "--markdown"], root);
-  await writeFile(join(root, "README.md"), readme(table.replace("| 2/2 (100%) |", "| 2/2 (99%) |")));
+  await writeFile(join(root, "README.md"), readme(table.replace("| 2/2 (100%), per run 2 |", "| 2/2 (99%), per run 2 |")));
 
   await expect(main(["report", "--check-readme"], root)).rejects.toThrow(
-    "Line 3 of the table reads \"| rule-based | 2 | 2/2 (99%) |",
+    "Line 3 of the table reads \"| rule-based | 1 | 2 | 2/2 (99%), per run 2 |",
   );
 });
 

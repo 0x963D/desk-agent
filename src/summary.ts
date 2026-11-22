@@ -17,7 +17,8 @@ export const Summary = z.strictObject({
 });
 export type Summary = z.infer<typeof Summary>;
 
-function percentile(sorted: number[], p: number): number {
+// The nearest-rank percentile: the value at rank ⌈p × n⌉ of the n sorted values.
+export function percentile(sorted: readonly number[], p: number): number {
   return sorted[Math.max(0, Math.ceil(p * sorted.length) - 1)] ?? 0;
 }
 

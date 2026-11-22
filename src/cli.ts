@@ -12,11 +12,15 @@ import { caseDir, filesIn, loadSplit, readConversations, runName, writeJson } fr
 import { grade, passed } from "./grade.ts";
 import {
   appendLedger,
+  codeOf,
   gitState,
   hashCaseFiles,
+  hashCode,
   ledgerFile,
   readLedger,
+  readLedgerCode,
   scoredRunDir,
+  writeLedgerCode,
   type LedgerEntry,
 } from "./ledger.ts";
 import { recordedModel, recordingDir, recordingPath, recordModel, type Recorder } from "./model.ts";
@@ -29,7 +33,7 @@ import { spendCap, spendFile, spendGuard } from "./spend.ts";
 import { formatSummary, Summary, summarize } from "./summary.ts";
 
 const USAGE = [
-  "usage: tune [--agent <name>] [--record] | score [--agent <name>] [--record] [--set held-out|final] | regrade <run directory> | replay | report [--markdown] | report --runs [--markdown] | report --check-readme | chat [--agent <name>] [--replay <tuning case id>]",
+  "usage: tune [--agent <name>] [--record] | score [--agent <name>] [--record] [--set held-out|final] | regrade <run directory> | replay | report [--markdown] | report --runs [--markdown] | report --check-readme | ledger-code | chat [--agent <name>] [--replay <tuning case id>]",
   "       | audit-packet --out <dir> --key <file> [--seed <text>] | audit-agreement --key <file> [--partial] <verdict file>...",
   "       | audit-sheet --packet <dir> --ids <file> --out <file.html>",
 ].join("\n");
@@ -150,22 +154,23 @@ async function replay(root: string): Promise<string> {
   return reports.join("\n\n");
 }
 
-async function regradeScored(root: string, cases: TestCase[], entry: LedgerEntry): Promise<void> {
+async function regradeScored(root: string, cases: TestCase[], entry: LedgerEntry): Promise<Graded> {
   const set = entry.summary.split;
   const conversations = await readConversations(scoredRunDir(root, entry.run));
   if (conversations.length === 0) {
-    throw new Error(`${entry.run}, the latest scored run of ${entry.agent}, holds no saved conversations`);
+    throw new Error(`${entry.run}, a scored run of ${entry.agent}, holds no saved conversations`);
   }
-  let regraded: Summary;
+  let graded: Graded;
   try {
-    regraded = gradeAll(set, cases, conversations).summary;
+    graded = gradeAll(set, cases, conversations);
   } catch (error) {
     const why = error instanceof Error ? error.message : String(error);
     throw new Error(`${entry.run} cannot be graded again: ${why}`, { cause: error });
   }
+  const regraded = graded.summary;
   const fields = Object.keys(entry.summary) as (keyof Summary)[];
   const differ = fields.filter((field) => regraded[field] !== entry.summary[field]);
-  if (differ.length === 0) return;
+  if (differ.length === 0) return graded;
   const cause =
     entry.cases_sha256 === (await hashCaseFiles(root, set))
       ? `The ${set} cases are the ones it was scored on, so the grader, the summary or the saved conversations have changed.`
@@ -182,6 +187,7 @@ async function scoreReport(root: string, markdown: boolean): Promise<string> {
   if (ledger.length === 0) {
     throw new Error(`no scoring run: ${shown(root, ledgerFile(root))} holds no line. pnpm score records one.`);
   }
+  const code = await readLedgerCode(root);
   const tables: string[] = [];
   for (const set of REPORTED_SETS) {
     const scored = ledger.filter((entry) => entry.summary.split === set);
@@ -190,9 +196,24 @@ async function scoreReport(root: string, markdown: boolean): Promise<string> {
     const rows: ReportRow[] = [];
     for (const agent of new Set(scored.map((entry) => entry.agent))) {
       const lines = scored.filter((entry) => entry.agent === agent);
-      const entry = lines.at(-1)!;
-      await regradeScored(root, cases, entry);
-      rows.push({ entry, scored: lines.length });
+      const latest = lines.at(-1)!;
+      const latestCode = codeOf(latest, code);
+      // A line whose code is unknown stands alone, because nothing shows that another run used the same code.
+      const same =
+        latestCode === undefined
+          ? [latest]
+          : lines.filter((entry) => entry.cases_sha256 === latest.cases_sha256 && codeOf(entry, code) === latestCode);
+      const graded = await Promise.all(same.map((entry) => regradeScored(root, cases, entry)));
+      const results = graded.flatMap((run) => run.results);
+      rows.push({
+        agent,
+        runs: graded.map((run) => run.summary),
+        turn_ms: results.flatMap((result) => result.turn_ms).sort((a, b) => a - b),
+        cost_usd: results.reduce((total, result) => total + result.cost_usd, 0),
+        code: latestCode,
+        latest,
+        scored: lines.length,
+      });
     }
     tables.push(reportTable(set, rows, { markdown }));
   }
@@ -204,7 +225,11 @@ async function runsReport(root: string, markdown: boolean): Promise<string> {
   if (ledger.length === 0) {
     throw new Error(`no scoring run: ${shown(root, ledgerFile(root))} holds no line. pnpm score records one.`);
   }
-  return runsTable(ledger, { markdown });
+  const code = await readLedgerCode(root);
+  return runsTable(
+    ledger.map((entry) => ({ entry, code: codeOf(entry, code) })),
+    { markdown },
+  );
 }
 
 async function checkReadme(root: string): Promise<string> {
@@ -294,6 +319,7 @@ export async function main(args: string[], root: string = process.cwd(), termina
   if (command === "report" && values["check-readme"] && takes(0, "check-readme")) return checkReadme(root);
   if (command === "report" && values.runs && takes(0, "runs", "markdown")) return runsReport(root, values.markdown ?? false);
   if (command === "report" && takes(0, "markdown")) return scoreReport(root, values.markdown ?? false);
+  if (command === "ledger-code" && takes(0)) return writeLedgerCode(root);
   if (command === "regrade" && takes(1)) return regrade(root, resolve(root, rest[0]!));
   if (command === "replay" && takes(0)) return replay(root);
   const chatting = command === "chat" && takes(0, "agent", "replay");
@@ -323,6 +349,7 @@ export async function main(args: string[], root: string = process.cwd(), termina
   if (command === "tune") return tune(root, agent, record);
   const git = gitState(root);
   const cases_sha256 = await hashCaseFiles(root, set.data);
+  const code_sha256 = await hashCode(root, set.data);
   const { dir, graded } = await run(root, agent, set.data, join(root, "results"), record);
   await appendLedger(root, {
     time: new Date().toISOString(),
@@ -330,6 +357,7 @@ export async function main(args: string[], root: string = process.cwd(), termina
     run: shown(root, dir),
     ...git,
     cases_sha256,
+    code_sha256,
     summary: { ...graded.summary, split: set.data },
   });
   await save(dir, graded);

@@ -11,10 +11,11 @@ Nothing here calls a model or the network unless a command is given `--record`, 
 	pnpm score --set final       # the same on cases/final
 	pnpm regrade <run directory> # grade a saved run again, without the agent
 	pnpm replay                  # run cases/tuning for every agent that can run offline
-	pnpm report                  # the latest held-out score of every agent, regraded from results/
+	pnpm report                  # per scored set, each agent's runs on the latest run's cases and code, regraded from results/
 	pnpm report --markdown       # the same table as Markdown
 	pnpm report --runs           # every line of results/ledger.jsonl, oldest first; --markdown for Markdown
 	pnpm report --check-readme   # fail when the README's table is not the current report --markdown
+	pnpm ledger:code             # write the code hash of ledger lines older than code_sha256 to results/ledger-code.json, from Git
 	docker compose run --rm check   # typecheck, test, replay and report in a container with no network
 	pnpm tune --agent rule-based # pick an agent from the registry
 	pnpm tune --agent plain-gpt-6-luna   # the model agent, replayed from recordings/
@@ -29,7 +30,7 @@ Git ignores `traces/`, which holds the tuning runs and the chat session logs, an
 
 ## Read the code in this order
 
-The source is about 2,700 lines in 28 files. `wc -l src/*.ts src/agents/*.ts` regenerates the count.
+The source is about 3,300 lines in 29 files. `wc -l src/*.ts src/agents/*.ts` regenerates the count.
 
 1. `src/shapes.ts` names every shape that crosses a file or a function boundary.
 2. `src/tools.ts` holds the five function contracts.
@@ -40,10 +41,10 @@ The source is about 2,700 lines in 28 files. `wc -l src/*.ts src/agents/*.ts` re
 7. `src/trace.ts` derives the effects and the outcome from a conversation.
 8. `src/grade.ts` compares a conversation with its case. `src/language.ts` reads the language of a message for it.
 9. `src/summary.ts` turns the results of one run into the numbers.
-10. `src/files.ts` reads and writes files and enforces the case contract. `src/ledger.ts` records a scoring run. `src/report.ts` lays out the report and the run tables and finds the README's table.
+10. `src/files.ts` reads and writes files and enforces the case contract. `src/ledger.ts` records a scoring run with the hashes of its cases and its code. `src/report.ts` lays out the report and the run tables and finds the README's table.
 11. `src/chat.ts` lets a person talk to an agent, and `src/redact.ts` masks the personal data in what it logs and prints.
 12. `src/packet.ts` builds the blind packet for readers, and `src/agreement.ts` loads their verdicts and measures how far they agree.
-13. `src/cli.ts` holds the eight commands, and `src/env.ts` finds the environment file it loads. `src/agents/` holds the registry, the rule-based baseline and the plain model agent: `prompt.ts` is the system prompt, `openai.ts` the live client and its prices, `plain.ts` the agent.
+13. `src/cli.ts` holds the ten commands, and `src/env.ts` finds the environment file it loads. `src/agents/` holds the registry, the rule-based baseline and the plain model agent: `prompt.ts` is the system prompt, `openai.ts` the live client and its prices, `plain.ts` the agent.
 
 ## The shapes
 
@@ -59,7 +60,7 @@ Every shape is a zod schema in `src/shapes.ts`, and its TypeScript type is deriv
 | `Conversation` | The trace of one run of one case: an opaque id, the case id, the split, the agent and the turns. | `<run>/conversations/<case id>.json` |
 | `TestResult` | The grade of one conversation. | `<run>/results.json` |
 | `Summary` | The numbers for one run of one split. | `<run>/summary.json` |
-| `LedgerEntry` | One scoring run: the time, the agent, the commit, the tree state, a hash of the cases of its set and the summary, whose split names the set. | `results/ledger.jsonl` |
+| `LedgerEntry` | One scoring run: the time, the agent, the commit, the tree state, a hash of the cases of its set, a hash of its code and the summary, whose split names the set. | `results/ledger.jsonl` |
 | `ChatLog` | One `pnpm chat` session: the conversation id, the agent, the replayed case if any, the start time and the turns, every string in them masked. | `traces/chat/<agent>/<session>.json` |
 | `AuditKey` | The seed of a blind packet and, for each random id in it, the agent, the run and the case. | A path given by `--key`, outside the packet. |
 | `Verdict` | One reader's judgement of one conversation: the id, `acceptable`, one field per criterion and a note. | `results/audit/<reader>.jsonl` |
@@ -291,15 +292,32 @@ A summary needs one result for every case of its split. An interrupted run leave
 
 ## The report and the one-command check
 
-`pnpm report` prints the numbers the README may quote. It reads `results/ledger.jsonl` and, for each agent in it, the run named by that agent's last line. It grades the saved conversations again with `grade` and `summarize`, the same code that scored them, and compares every field of the new summary with the summary on the ledger line. One differing field stops the report with the field, both values and the likely cause: the held-out cases changed since the score, or they did not and the grader or the saved conversations did. When every agent agrees, it prints one row per agent with the commit of the run, marked `(dirty)` when the tree was dirty, and the number of lines the agent has in the ledger, so a reader sees how often the held-out set was used. The rates, times and cost come from the formatters in `src/summary.ts` that the run summary uses. The report writes nothing and adds no ledger line.
+`pnpm report` prints the numbers the README may quote, one table per scored set, the final set first. It reads `results/ledger.jsonl`. For each agent on a set, a row covers every scored run with the same cases and the same code as the agent's latest run on that set. It grades each run's saved conversations again with `grade` and `summarize`, the same code that scored them, and compares every field of each new summary with the summary on its ledger line. One differing field stops the report with the field, both values and the likely cause: the cases changed since the score, or they did not and the grader or the saved conversations did. When every run agrees, the row gives each count as the total over its runs, the share of their conversations, and the lowest and highest count in one run, such as `47/54 (87%), per run 15–16`. The turn times are nearest-rank over every turn of those runs, and the cost is their total over their conversations. The row names its number of runs, the start of the code hash, the commit of the latest run, marked `(dirty)` when that tree was dirty, and the number of lines the agent has for the set, so a reader sees how often the set was used. The report writes nothing and adds no ledger line.
 
 | Alternative | Verdict | Why |
 | --- | --- | --- |
 | Print the summary saved on the ledger line. | Rejected. | It trusts a copy. A grader change that moves a number would go unnoticed until the next score. |
 | Print the best run of each agent. | Rejected. | Picking the best of several held-out runs is tuning on the held-out set. |
-| Regrade the latest run and stop on any difference. | Chosen. | Every printed number is one the current code reproduces from committed files. |
+| Regrade the latest run only. | Rejected. | One run of a model agent moves by a case from the next. Luna and Sol each passed 47 of 54 held-out conversations over three runs, and the latest runs read 15 and 16, so one looked a case ahead. |
+| Pool every run of the agent on the set. | Rejected. | A run on other cases or other code measures another test or another agent. |
+| Regrade every run on the latest run's cases and code, print the total and the range, and stop on any difference. | Chosen. | Every printed number is one the current code reproduces from committed files, and the range shows how far one run moves. |
 
-`pnpm report --runs` prints one row for every line of the ledger, oldest first: the agent, the time, the commit, whether the tree was dirty, the first 12 characters of the held-out cases' hash and the counts of the summary. It reads the ledger only, so it works where the saved runs are absent, and a change of hash between two rows shows that the held-out cases changed between those scores. `--markdown` prints it as Markdown.
+### How the report knows two runs used the same code
+
+`pnpm score` records `code_sha256`, a SHA-256 over the files that decide how a run plays and grades, apart from its cases: everything under `src/`, `package.json`, `pnpm-lock.yaml`, `fixtures/shop.yaml` and the set's order file. It hashes them as they are on disk, so a dirty tree hashes what ran. Each file adds its path from the root, with forward slashes, then its bytes, in path order, the scheme of `cases_sha256`. Tests, docs, recordings and results are left out, because none of them changes a conversation or its grade. The prompt is in `src/`, so a prompt change is a code change.
+
+The nine lines written before the field cannot be rewritten. `pnpm ledger:code` computes the same hash from Git, from the files each clean line's commit holds, and writes it to `results/ledger-code.json`, keyed by the line's run. Run again, it checks every hash in that file against Git and adds the missing ones. A dirty line gets none, because its commit does not hold what ran. The report takes a line's own field first, then that file, and a line whose code is unknown stands alone in its row. Both are committed files, so the Docker image, which has no `.git`, reports the same rows. A test scores twice at two commits, removes the field from both lines, and shows that the runs stand alone until `pnpm ledger:code` gives them the hash they recorded.
+
+On the current ledger the seven lines from `2d848d8` to `72d7b66` share one code hash, because the commits between them changed only `results/`. The two earlier rule-based lines each have their own, so the rule-based row covers its latest run alone.
+
+| Alternative | Verdict | Why |
+| --- | --- | --- |
+| The commit. | Rejected. | Every score commits its results, so each of the nine runs sits at its own commit, and no row would ever cover two runs. |
+| Compare commits with `git diff` when the report runs. | Rejected. | The Docker image has no Git history, so the container check could not run it. |
+| Hash only the files a scored run imports. | Rejected. | It follows the import graph, which moves as the code does. Hashing all of `src/` costs at most a row that starts again after a change to a file a run does not use, such as `src/report.ts`. That shows fewer runs, never a wrong number. |
+| A content hash of the code, recorded by score and computed once from Git for older lines. | Chosen. | Two runs share a row only when the files that decide them are byte for byte the same, whatever else changed between their commits, and the check needs no Git where it runs. |
+
+`pnpm report --runs` prints one row for every line of the ledger, oldest first: the agent, the set, the time, the commit, whether the tree was dirty, the first 12 characters of the cases hash and of the code hash, and the counts of the summary. It reads the ledger and `results/ledger-code.json` only, so it works where the saved runs are absent, and a change of hash between two rows shows that the cases or the code changed between those scores. `--markdown` prints it as Markdown.
 
 README.md shows the `pnpm report --markdown` table between the lines `<!-- report table: start -->` and `<!-- report table: end -->`. `pnpm report --check-readme` builds the report as `pnpm report --markdown` does, regrading the latest runs, and fails when the lines between the markers differ from it. The error names the first line that differs. A new score makes the table stale, and so does a hand edit or a grader change that moves a number. `pnpm check` runs it last, so the container check fails until the README shows the current numbers.
 
@@ -507,7 +525,8 @@ The scored traces under `traces/` and `results/` and the recordings under `recor
 - A return covers the whole order. An order that holds any commissioned item cannot be returned, even for its catalogue prints.
 - The refund of a cancellation, a return or a damage refund is the order total. The return postage that the customer pays is not deducted.
 - A duplicate is a second request of the same kind for the same order. A rejected request does not count.
-- `cases_sha256` covers the case files of the scored set only. A change to its fixture file shows in the commit and in the `dirty` flag.
+- `code_sha256` covers all of `src/`, so a change to a file that no scored run uses, such as the report, starts a new row for the next score.
+- `cases_sha256` covers the case files of the scored set only. A change to its order file shows in `code_sha256` instead.
 - `dirty` counts untracked files, so the results of an earlier, uncommitted score make the next score dirty.
 - An agent that throws stops the run. The conversations written before it stay on disk and cannot be summarised.
 - An outage covers a whole case. No case can test a function that fails in the middle of a conversation.
