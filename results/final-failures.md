@@ -4,15 +4,15 @@ The automatic grader failed 13 of 126 conversations across seven runs. Eight wer
 
 | Agent | Run | Scoring commit | Automatic passes |
 | --- | --- | --- | ---: |
-| Rule-based | [`b7ea`](rule-based/2026-11-22T19-33-19Z-b7ea/) | `0f25884` | 10/18 |
-| Luna | [`e120`](plain-gpt-6-luna/2026-11-22T19-33-20Z-e120/) | `fe0adab` | 18/18 |
-| Luna | [`e5b9`](plain-gpt-6-luna/2026-11-22T19-34-56Z-e5b9/) | `3852713` | 17/18 |
-| Luna | [`939f`](plain-gpt-6-luna/2026-11-22T19-36-55Z-939f/) | `89531ea` | 17/18 |
-| Sol | [`b205`](plain-gpt-6.2-sol/2026-11-22T19-38-22Z-b205/) | `41fed80` | 17/18 |
-| Sol | [`301f`](plain-gpt-6.2-sol/2026-11-22T19-39-59Z-301f/) | `5ec43ca` | 17/18 |
-| Sol | [`d0db`](plain-gpt-6.2-sol/2026-11-22T19-42-28Z-d0db/) | `8042e64` | 17/18 |
+| Rule-based | [`b7ea`](rule-based/2026-11-22T19-33-19Z-b7ea/) | `0833d3f` | 10/18 |
+| Luna | [`e120`](plain-gpt-6-luna/2026-11-22T19-33-20Z-e120/) | `1f9c6cb` | 18/18 |
+| Luna | [`e5b9`](plain-gpt-6-luna/2026-11-22T19-34-56Z-e5b9/) | `b90ab27` | 17/18 |
+| Luna | [`939f`](plain-gpt-6-luna/2026-11-22T19-36-55Z-939f/) | `9e0edf2` | 17/18 |
+| Sol | [`b205`](plain-gpt-6.2-sol/2026-11-22T19-38-22Z-b205/) | `be74fae` | 17/18 |
+| Sol | [`301f`](plain-gpt-6.2-sol/2026-11-22T19-39-59Z-301f/) | `08acba5` | 17/18 |
+| Sol | [`d0db`](plain-gpt-6.2-sol/2026-11-22T19-42-28Z-d0db/) | `74fa765` | 17/18 |
 
-All seven ledger entries have clean commits, case hash `f1a2b385dc97`, and code hash `421a5b33baa2` (prefixes). At `63ce6c6`, `pnpm regrade <run directory>` reproduced all seven run counts. Recomputing each result and summary matched the saved JSON and the ledger. The first table from `pnpm report` gives 10/18, 52/54, and 51/54. The run links above contain the evidence in `conversations/<case id>.json`. A turn here includes the customer message, the calls, and the reply. [Scoring ledger](ledger.jsonl)
+All seven ledger entries have clean commits, case hash `f1a2b385dc97`, and code hash `421a5b33baa2` (prefixes). At `f94492e`, `pnpm regrade <run directory>` reproduced all seven run counts. Recomputing each result and summary matched the saved JSON and the ledger. The first table from `pnpm report` gives 10/18, 52/54, and 51/54. The run links above contain the evidence in `conversations/<case id>.json`. A turn here includes the customer message, the calls, and the reply. [Scoring ledger](ledger.jsonl)
 
 ## Automatic failures
 

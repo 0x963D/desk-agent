@@ -1,16 +1,16 @@
 # Held-out failure review
 
-Review of the seven saved runs at `59f9ea3`. All seven ledger entries record clean scoring commits at or after `2d848d8` and the same held-out case hash. Regrading reproduced every saved result and summary. Keep this review with the held-out results. Use the tuning set to investigate any proposed changes. [Scoring ledger](ledger.jsonl)
+Review of the seven saved runs at `31fcdff`. All seven ledger entries record clean scoring commits at or after `83c34fc` and the same held-out case hash. Regrading reproduced every saved result and summary. Keep this review with the held-out results. Use the tuning set to investigate any proposed changes. [Scoring ledger](ledger.jsonl)
 
 | Agent | Run | Scoring commit | Automatic passes |
 | --- | --- | --- | ---: |
-| Rule-based | [`b9fd`](rule-based/2026-11-22T17-13-19-595Z-b9fd/) | `2d848d8` | 4/18 |
-| Luna | [`2bf4`](plain-gpt-6-luna/2026-11-22T17-13-21-177Z-2bf4/) | `08793a7` | 16/18 |
-| Luna | [`5d02`](plain-gpt-6-luna/2026-11-22T17-14-40-544Z-5d02/) | `f2046c5` | 16/18 |
-| Luna | [`8824`](plain-gpt-6-luna/2026-11-22T17-16-01-966Z-8824/) | `940172a` | 15/18 |
-| Sol | [`433a`](plain-gpt-6.2-sol/2026-11-22T17-17-14-995Z-433a/) | `7413ecb` | 15/18 |
-| Sol | [`31e2`](plain-gpt-6.2-sol/2026-11-22T17-18-43-660Z-31e2/) | `0c34299` | 16/18 |
-| Sol | [`2348`](plain-gpt-6.2-sol/2026-11-22T17-20-17-210Z-2348/) | `72d7b66` | 16/18 |
+| Rule-based | [`b9fd`](rule-based/2026-11-22T17-13-19-595Z-b9fd/) | `83c34fc` | 4/18 |
+| Luna | [`2bf4`](plain-gpt-6-luna/2026-11-22T17-13-21-177Z-2bf4/) | `0f8a9ae` | 16/18 |
+| Luna | [`5d02`](plain-gpt-6-luna/2026-11-22T17-14-40-544Z-5d02/) | `6ca183f` | 16/18 |
+| Luna | [`8824`](plain-gpt-6-luna/2026-11-22T17-16-01-966Z-8824/) | `fe90c23` | 15/18 |
+| Sol | [`433a`](plain-gpt-6.2-sol/2026-11-22T17-17-14-995Z-433a/) | `f5956ed` | 15/18 |
+| Sol | [`31e2`](plain-gpt-6.2-sol/2026-11-22T17-18-43-660Z-31e2/) | `c7b1273` | 16/18 |
+| Sol | [`2348`](plain-gpt-6.2-sol/2026-11-22T17-20-17-210Z-2348/) | `a13834f` | 16/18 |
 
 Luna and Sol refer to `plain-gpt-6-luna` and `plain-gpt-6.2-sol`. A turn number pairs one customer message with its agent reply and calls. Each run directory contains `results.json`, `summary.json`, and `conversations/<case id>.json`.
 

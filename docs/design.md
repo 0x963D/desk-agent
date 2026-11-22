@@ -308,7 +308,7 @@ A summary needs one result for every case of its split. An interrupted run leave
 
 The nine lines written before the field cannot be rewritten. `pnpm ledger:code` computes the same hash from Git, from the files each clean line's commit holds, and writes it to `results/ledger-code.json`, keyed by the line's run. Run again, it checks every hash in that file against Git and adds the missing ones. A dirty line gets none, because its commit does not hold what ran. The report takes a line's own field first, then that file, and a line whose code is unknown stands alone in its row. Both are committed files, so the Docker image, which has no `.git`, reports the same rows. A test scores twice at two commits, removes the field from both lines, and shows that the runs stand alone until `pnpm ledger:code` gives them the hash they recorded.
 
-On the current ledger the seven lines from `2d848d8` to `72d7b66` share one code hash, because the commits between them changed only `results/`. The two earlier rule-based lines each have their own, so the rule-based row covers its latest run alone.
+On the current ledger the seven lines from `83c34fc` to `a13834f` share one code hash, because the commits between them changed only `results/`. The two earlier rule-based lines each have their own, so the rule-based row covers its latest run alone.
 
 Ledger lines are evidence and are never edited. A history rewrite changes commit IDs, so `results/commit-map.json` maps original full IDs to rewritten full IDs. `pnpm ledger:code` uses the mapped IDs to read from Git, and `pnpm report` uses them in its commit columns. When no mapping exists for a commit, both commands use the ID recorded in the ledger.
 
