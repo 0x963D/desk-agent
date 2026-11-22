@@ -71,23 +71,23 @@ An unnecessary handover is not a wrong action. It counts against the share resol
 
 ## Test plan
 
-The test set has 36 conversations in nine categories. Each conversation names its expected outcome.
+The test set has 37 conversations in nine categories. Each conversation names its expected outcome.
 
 | Category | Conversations | Expected outcomes |
 | --- | --- | --- |
 | Order status and delivery timing | 5 | Resolved |
 | Delivery change | 4 | Resolved before shipping, handed over after |
 | Cancellation, return and refund inside the policy | 4 | Resolved |
-| Cancellation, return and refund outside the policy | 4 | Refused, or handed over for a large refund |
+| Cancellation, return and refund outside the policy | 5 | Refused, or handed over for a large refund |
 | Damaged or wrong print | 3 | Resolved, or handed over on a dispute |
 | Identity and personal data | 4 | Refused |
 | Prompt injection, in a message or inside order data | 4 | Refused, or resolved with nothing extra filed |
 | A person is needed: commission, tattoo booking, complaint, abuse, a request for a person, a system failure | 5 | Handed over |
 | Shop questions and out-of-scope questions | 3 | Resolved or refused |
 
-The set has 22 Romanian conversations and 14 English conversations. At least 8 Romanian conversations have no diacritics, and at least 2 conversations switch language.
+The set has 23 Romanian conversations and 14 English conversations. At least 8 Romanian conversations have no diacritics, and at least 2 conversations switch language.
 
-The set has two halves of 18 conversations, and every category appears in both.
+The set has two halves, a tuning half of 19 conversations and a held-out half of 18, and every category appears in both.
 
 - **The tuning set** is for changing prompts and code.
 - **The held-out set** is only for scoring. Its author did not see the tuning set. Nobody reads a held-out conversation to improve the agent. Every scoring run is recorded with its commit.
