@@ -120,11 +120,11 @@ These are the weak spots, stated before a reader finds them.
 
 ## Run it
 
-With Docker, from a fresh clone:
+With Docker Engine and Docker Compose running, from a fresh clone:
 
 	docker compose run --rm check
 
-Building the image downloads Node and the dependencies. The check itself runs with no network and needs no key. It typechecks, runs the 286 tests, replays the tuning set for every agent from its recordings, prints the report above and checks this README against it. CI runs the same steps on every pull request and every push to `main`.
+Building the image downloads Node and the dependencies. The check itself runs with no network and needs no key. It typechecks, runs the 286 tests, replays the tuning set for every agent from its recordings, prints the report as a plain-text table with the same numbers as the table above, and checks that the README's table matches the report. `pnpm report --markdown` prints it in the README's format. CI runs the same steps on every pull request and every push to `main`.
 
 Without Docker, with Node 24.3 or later and pnpm 11.18.0:
 
