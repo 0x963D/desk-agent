@@ -29,7 +29,7 @@ import { formatSummary, Summary, summarize } from "./summary.ts";
 
 const USAGE = [
   "usage: tune [--agent <name>] [--record] | score [--agent <name>] [--record] | regrade <run directory> | replay | report [--markdown] | report --runs [--markdown] | report --check-readme | chat [--agent <name>] [--replay <tuning case id>]",
-  "       | audit-packet --out <dir> --key <file> [--seed <text>] | audit-agreement --key <file> <verdict file>...",
+  "       | audit-packet --out <dir> --key <file> [--seed <text>] | audit-agreement --key <file> [--partial] <verdict file>...",
 ].join("\n");
 
 // The terminal `pnpm chat` talks through. Standard input is opened only when a live chat reads it.
@@ -253,6 +253,7 @@ export async function main(args: string[], root: string = process.cwd(), termina
         out: { type: "string" },
         key: { type: "string" },
         seed: { type: "string" },
+        partial: { type: "boolean" },
       },
       allowPositionals: true,
       strict: true,
@@ -270,8 +271,9 @@ export async function main(args: string[], root: string = process.cwd(), termina
   if (command === "audit-packet" && values.out && values.key && takes(0, "out", "key", "seed")) {
     return writePacket(root, { out: resolve(root, values.out), key: resolve(root, values.key), seed: values.seed });
   }
-  if (command === "audit-agreement" && values.key && rest.length > 0 && only("key")) {
-    return auditAgreement(root, resolve(root, values.key), rest.map((file) => resolve(root, file)));
+  if (command === "audit-agreement" && values.key && rest.length > 0 && only("key", "partial")) {
+    const files = rest.map((file) => resolve(root, file));
+    return auditAgreement(root, resolve(root, values.key), files, { partial: values.partial ?? false });
   }
   if (command === "report" && values["check-readme"] && takes(0, "check-readme")) return checkReadme(root);
   if (command === "report" && values.runs && takes(0, "runs", "markdown")) return runsReport(root, values.markdown ?? false);

@@ -322,6 +322,8 @@ The ids and the order come from SHA-256 of the seed and a counter, so `--seed` r
 
 `pnpm audit:agreement --key <file> <verdict file>...` validates each verdict file against the key: every id once, no unknown id, every field filled, `acceptable` true exactly when every criterion holds, and a note that names the turn of a failure. The file name names the reader. For each reader it prints the acceptable conversations per agent beside the grader's passes from the saved `results.json`, the agreement with the grader as a count, Cohen's kappa and a two-by-two table, and the criteria that failed most. For each pair of readers it prints their agreement on `acceptable`, Cohen's kappa and the ids where they differ. Kappa is undefined when both gave one answer to every conversation, and the report says so instead of dividing by zero.
 
+`--partial` lets a verdict file judge only some of the key's conversations, such as a hand-checked sample. That reader is compared with the grader on the conversations it judged and with each other reader on the conversations both judged, and each of its headings says how many, such as `reader human, on 18 of 108 conversations`. Without the flag a file that misses a conversation is rejected, so a reader who skipped one by mistake is caught.
+
 | Alternative | Verdict | Why |
 | --- | --- | --- |
 | Show the agent's declared status. | Rejected. | It is the agent's own claim of the outcome and anchors the reader. The customer never sees it. |

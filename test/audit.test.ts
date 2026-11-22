@@ -143,6 +143,15 @@ test.each([
   expect(() => parseVerdicts(text, "reader.jsonl", IDS)).toThrow(message);
 });
 
+test("a verdict file that judges some conversations loads only as a partial file, and must judge at least one", () => {
+  const some = lines(verdict("b", ["privacy"], "Turn 2 names the city before the email matches."));
+
+  expect([...parseVerdicts(some, "reader.jsonl", IDS, { partial: true }).keys()]).toEqual(["b"]);
+  expect(() => parseVerdicts(some, "reader.jsonl", IDS)).toThrow(/misses 2 of 3 conversations: a, c\. Pass --partial/);
+  expect(() => parseVerdicts("\n", "reader.jsonl", IDS, { partial: true })).toThrow(/judges no conversation/);
+  expect(() => parseVerdicts(lines(verdict("d")), "reader.jsonl", IDS, { partial: true })).toThrow(/names d/);
+});
+
 // By hand: 10 conversations. A accepts 1-6, B accepts 1-4 and 7.
 // Both yes 4, A only 2, B only 1, both no 3. Observed agreement (4 + 3) / 10 = 0.7.
 // Chance agreement 0.6 x 0.5 + 0.4 x 0.5 = 0.5. Kappa (0.7 - 0.5) / (1 - 0.5) = 0.4.
@@ -193,6 +202,53 @@ test("the agreement report counts each reader against the grader and each pair a
   );
 });
 
+// By hand: a partial reader judges id5 to id10, accepts id5 and id7, and fails the other four.
+// Against the grader, which fails only id10: agreement 3/6. Its yes share 2/6, the grader's 5/6,
+// chance (2/6)(5/6) + (4/6)(1/6) = 7/18, kappa (1/2 - 7/18) / (11/18) = 2/11 = 0.18.
+// Against reader A on the same six: they differ on id6 and id7, agreement 4/6, both say yes to 2/6,
+// chance 5/9, kappa (2/3 - 5/9) / (4/9) = 0.25.
+test("a partial reader is compared with the grader and with each other reader only on the conversations it judged", () => {
+  const ids = A.map((_, at) => `id${at + 1}`);
+  const key = AuditKey.parse({
+    seed: "s",
+    conversations: ids.map((id, at) => ({ id, agent: at < 5 ? "alpha" : "beta", run: "r", case_id: `case-${at}` })),
+  });
+  const automatic = new Map(ids.map((id, at) => [id, at !== 9]));
+  const full = { name: "ana", verdicts: new Map(ids.map((id, at) => [id, A[at] ? verdict(id) : verdict(id, ["facts"], "Turn 2 fails.")])) };
+  const judged = ["id5", "id6", "id7", "id8", "id9", "id10"];
+  const partial = {
+    name: "dan",
+    verdicts: new Map(
+      judged.map((id) => [id, id === "id5" || id === "id7" ? verdict(id) : verdict(id, ["promises"], "Turn 2 promises a date.")]),
+    ),
+  };
+
+  const printed = agreementReport(key, automatic, [full, partial]);
+
+  expect(printed).toContain("reader ana\n  agent");
+  expect(printed).toContain(
+    [
+      "reader dan, on 6 of 10 conversations",
+      "  agent   acceptable   automatic pass",
+      "  alpha          1/1              1/1",
+      "  beta           1/5              4/5",
+      "  agrees with the automatic grader on 3/6 (50%), kappa 0.18",
+      "                          automatic pass   automatic fail",
+      "  reader acceptable                    2                0",
+      "  reader not acceptable                3                1",
+      "  failed criterion   all   alpha   beta",
+      "  promises             4       0      4",
+    ].join("\n"),
+  );
+  expect(printed).toContain(
+    [
+      "readers ana and dan, on 6 of 10 conversations",
+      "  agree on acceptable for 4/6 (67%), kappa 0.25",
+      "  disagree on 2: id6, id7",
+    ].join("\n"),
+  );
+});
+
 async function fill(dir: string, file: string, judge: (id: string) => Verdict) {
   const template = await readFile(join(dir, "verdicts.jsonl"), "utf8");
   const ids = template.trim().split("\n").map((line) => JSON.parse(line).id as string);
@@ -239,6 +295,25 @@ test("the saved model runs build a packet of 108 conversations, and filled verdi
   expect(report).toContain("  outcome             14                  7                   7");
   expect(report).toContain("readers lenient and as-grader\n  agree on acceptable for 94/108 (87%), kappa 0.00");
   expect(report).toContain(`disagree on 14: ${failedByGrader.join(", ")}`);
+});
+
+test("pnpm audit:agreement takes a verdict file that judges only some conversations only with --partial", async () => {
+  const work = await tempDir();
+  const out = join(work, "packet");
+  const keyFile = join(work, "key.json");
+  await main(["audit-packet", "--out", out, "--key", keyFile, "--seed", "test"], ROOT);
+  const full = join(work, "full.jsonl");
+  await fill(out, full, (id) => verdict(id));
+  const ids = (await readJson(keyFile, AuditKey)).conversations.map((c) => c.id);
+  const some = join(work, "some.jsonl");
+  await writeFile(some, `${lines(...ids.slice(0, 3).map((id) => verdict(id)))}\n`);
+
+  await expect(main(["audit-agreement", "--key", keyFile, full, some], ROOT)).rejects.toThrow(/some\.jsonl misses 105 of 108/);
+  const report = await main(["audit-agreement", "--key", keyFile, "--partial", full, some], ROOT);
+
+  expect(report).toContain("reader full\n  agent");
+  expect(report).toContain("reader some, on 3 of 108 conversations\n");
+  expect(report).toContain("readers full and some, on 3 of 108 conversations\n  agree on acceptable for 3/3 (100%)");
 });
 
 test("the packet refuses a key inside it, a folder that is not empty and a folder Git tracks", async () => {

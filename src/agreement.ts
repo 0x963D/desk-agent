@@ -8,7 +8,13 @@ import { AuditKey, Criterion, TestResult, Verdict } from "./shapes.ts";
 
 export type Reader = { name: string; verdicts: ReadonlyMap<string, Verdict> };
 
-export function parseVerdicts(text: string, file: string, ids: readonly string[]): Map<string, Verdict> {
+// A partial file judges some of the key's conversations. Without `partial` it must judge every one.
+export function parseVerdicts(
+  text: string,
+  file: string,
+  ids: readonly string[],
+  { partial = false }: { partial?: boolean } = {},
+): Map<string, Verdict> {
   const known = new Set(ids);
   const verdicts = new Map<string, Verdict>();
   text.split("\n").forEach((line, at) => {
@@ -27,9 +33,12 @@ export function parseVerdicts(text: string, file: string, ids: readonly string[]
     if (verdicts.has(id)) throw new Error(`${where} names ${id} a second time`);
     verdicts.set(id, parsed.data);
   });
+  if (verdicts.size === 0) throw new Error(`${file} judges no conversation`);
   const missing = ids.filter((id) => !verdicts.has(id));
-  if (missing.length > 0) {
-    throw new Error(`${file} misses ${missing.length} of ${ids.length} conversations: ${missing.join(", ")}`);
+  if (missing.length > 0 && !partial) {
+    throw new Error(
+      `${file} misses ${missing.length} of ${ids.length} conversations: ${missing.join(", ")}. Pass --partial to compare a file that judges only some of them`,
+    );
   }
   return verdicts;
 }
@@ -57,18 +66,23 @@ function table(rows: readonly (readonly (string | number)[])[]): string[] {
   return cells.map((row) => `  ${row.map(align).join("   ")}`.trimEnd());
 }
 
+// A reader is compared with the grader on the conversations it judged, and a pair of readers on
+// the conversations both judged. A full reader judged every one.
 export function agreementReport(
   key: AuditKey,
   automatic: ReadonlyMap<string, boolean>,
   readers: readonly Reader[],
 ): string {
-  const ids = key.conversations.map((c) => c.id);
+  const all = key.conversations.map((c) => c.id);
   const agents = [...new Set(key.conversations.map((c) => c.agent))].sort();
-  const ofAgent = (agent: string) => key.conversations.filter((c) => c.agent === agent).map((c) => c.id);
-  const grader = ids.map((id) => automatic.get(id)!);
+  const judgedBy = (...some: readonly Reader[]) => all.filter((id) => some.every((reader) => reader.verdicts.has(id)));
+  const coverage = (ids: readonly string[]) => (ids.length === all.length ? "" : `, on ${ids.length} of ${all.length} conversations`);
   const sections: string[] = [];
 
   for (const reader of readers) {
+    const ids = judgedBy(reader);
+    const ofAgent = (agent: string) => key.conversations.filter((c) => c.agent === agent && reader.verdicts.has(c.id)).map((c) => c.id);
+    const grader = ids.map((id) => automatic.get(id)!);
     const verdict = (id: string) => reader.verdicts.get(id)!;
     const acceptable = ids.map((id) => verdict(id).acceptable);
     const count = (list: readonly string[], test: (v: Verdict) => boolean) => list.filter((id) => test(verdict(id))).length;
@@ -81,7 +95,7 @@ export function agreementReport(
       .sort((a, b) => b.all - a.all);
     sections.push(
       [
-        `reader ${reader.name}`,
+        `reader ${reader.name}${coverage(ids)}`,
         ...table([
           ["agent", "acceptable", "automatic pass"],
           ...agents.map((agent) => {
@@ -107,12 +121,18 @@ export function agreementReport(
 
   readers.forEach((first, at) => {
     for (const second of readers.slice(at + 1)) {
+      const ids = judgedBy(first, second);
+      const heading = `readers ${first.name} and ${second.name}${coverage(ids)}`;
+      if (ids.length === 0) {
+        sections.push(`${heading}\n  judged no conversation in common`);
+        continue;
+      }
       const a = ids.map((id) => first.verdicts.get(id)!.acceptable);
       const b = ids.map((id) => second.verdicts.get(id)!.acceptable);
       const differ = ids.filter((_, index) => a[index] !== b[index]);
       sections.push(
         [
-          `readers ${first.name} and ${second.name}`,
+          heading,
           `  agree on acceptable for ${share(ids.length - differ.length, ids.length)}, ${formatKappa(kappa(a, b))}`,
           `  disagree on ${differ.length}${differ.length > 0 ? `: ${differ.join(", ")}` : ""}`,
         ].join("\n"),
@@ -138,13 +158,18 @@ async function automaticGrades(root: string, key: AuditKey): Promise<Map<string,
   return grades;
 }
 
-export async function auditAgreement(root: string, keyFile: string, verdictFiles: readonly string[]): Promise<string> {
+export async function auditAgreement(
+  root: string,
+  keyFile: string,
+  verdictFiles: readonly string[],
+  { partial = false }: { partial?: boolean } = {},
+): Promise<string> {
   const key = await readJson(keyFile, AuditKey);
   const ids = key.conversations.map((c) => c.id);
   const readers = await Promise.all(
     verdictFiles.map(async (file) => ({
       name: basename(file, ".jsonl"),
-      verdicts: parseVerdicts(await readFile(file, "utf8"), file, ids),
+      verdicts: parseVerdicts(await readFile(file, "utf8"), file, ids, { partial }),
     })),
   );
   const names = readers.map((reader) => reader.name);
