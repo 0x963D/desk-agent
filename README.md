@@ -7,6 +7,13 @@ Work in progress. Results, architecture and setup will appear here as they are m
 ## Results
 
 <!-- report table: start -->
+| agent | conversations | passed every check | resolved correctly | handover rate | wrong-action rate | blocked attempts | median turn | p95 turn | cost per conversation | commit | times scored |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: |
+| rule-based | 18 | 4/18 (22%) | 1/18 (6%) | 12/18 (67%) | 0/18 (0%) | 2/18 (11%) | 0.17 ms | 1.92 ms | $0.0000 | 2d848d8 | 3 |
+| plain-gpt-6-luna | 18 | 15/18 (83%) | 5/18 (28%) | 6/18 (33%) | 0/18 (0%) | 0/18 (0%) | 2386.77 ms | 3511.71 ms | $0.0002 | 940172a | 3 |
+| plain-gpt-6.2-sol | 18 | 16/18 (89%) | 7/18 (39%) | 5/18 (28%) | 0/18 (0%) | 0/18 (0%) | 2735.88 ms | 4756.97 ms | $0.0118 | 72d7b66 | 3 |
+
+Held-out set only. Each row regrades the latest scored run of one agent and matches it to its line in results/ledger.jsonl. Turn times are nearest-rank. Times scored counts the agent's lines in the ledger.
 <!-- report table: end -->
 
 ## Run the check
