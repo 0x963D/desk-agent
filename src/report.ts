@@ -11,7 +11,8 @@ export type ReportRow = {
   turn_ms: readonly number[];
   cost_usd: number;
   code: string | undefined;
-  latest: LedgerEntry;
+  commit: string;
+  dirty: boolean;
   scored: number;
 };
 
@@ -46,11 +47,11 @@ const SCORE_COLUMNS: Column<ReportRow>[] = [
   { title: "p95 turn", cell: (row) => milliseconds(percentile(row.turn_ms, 0.95)), numeric: true },
   { title: "cost per conversation", cell: (row) => dollars(row.cost_usd / conversations(row)), numeric: true },
   { title: "code", cell: (row) => shortCode(row.code), numeric: false },
-  { title: "latest commit", cell: ({ latest }) => `${latest.commit.slice(0, 7)}${latest.dirty ? " (dirty)" : ""}`, numeric: false },
+  { title: "latest commit", cell: ({ commit, dirty }) => `${commit.slice(0, 7)}${dirty ? " (dirty)" : ""}`, numeric: false },
   { title: "times scored", cell: (row) => String(row.scored), numeric: true },
 ];
 
-export type RunRow = { entry: LedgerEntry; code: string | undefined };
+export type RunRow = { entry: LedgerEntry; code: string | undefined; commit: string };
 
 const count = (field: "cases" | Counted) => ({ entry }: RunRow) => String(entry.summary[field]);
 
@@ -58,7 +59,7 @@ const RUN_COLUMNS: Column<RunRow>[] = [
   { title: "agent", cell: ({ entry }) => entry.agent, numeric: false },
   { title: "set", cell: ({ entry }) => entry.summary.split, numeric: false },
   { title: "time (UTC)", cell: ({ entry }) => entry.time.slice(0, 19).replace("T", " "), numeric: false },
-  { title: "commit", cell: ({ entry }) => entry.commit.slice(0, 7), numeric: false },
+  { title: "commit", cell: ({ commit }) => commit.slice(0, 7), numeric: false },
   { title: "dirty", cell: ({ entry }) => (entry.dirty ? "yes" : "no"), numeric: false },
   { title: "cases hash", cell: ({ entry }) => entry.cases_sha256.slice(0, 12), numeric: false },
   { title: "code hash", cell: ({ code }) => shortCode(code), numeric: false },
