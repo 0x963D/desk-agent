@@ -1,70 +1,128 @@
-import { join } from "node:path";
-import { ruleBasedAgent } from "./agents/rule-based.ts";
-import { loadCases, loadFixtures, readJson, writeJson } from "./files.ts";
+import { randomBytes } from "node:crypto";
+import { mkdir } from "node:fs/promises";
+import { join, relative, resolve } from "node:path";
+import { parseArgs } from "node:util";
+import type { Agent } from "./agent.ts";
+import { agents, DEFAULT_AGENT } from "./agents/index.ts";
+import { createBackend } from "./backend.ts";
+import { caseDir, loadShop, loadSplit, readConversations, writeJson } from "./files.ts";
 import { grade, passed } from "./grade.ts";
+import { appendLedger, gitState, hashCaseFiles } from "./ledger.ts";
+import { recordedModel, recordingPath } from "./model.ts";
 import { runCase } from "./runner.ts";
-import { Conversation, Split, TestResult, type TestCase } from "./shapes.ts";
-import { formatSummary, summarize } from "./summary.ts";
+import { Conversation, TestResult, type Split, type TestCase } from "./shapes.ts";
+import { formatSummary, Summary, summarize } from "./summary.ts";
 
-const USAGE = "usage: tune | score | regrade <tuning|held-out>";
-const RUNS = { tune: "tuning", score: "held-out" } as const;
-const agent = ruleBasedAgent;
+const USAGE = "usage: tune [--agent <name>] | score [--agent <name>] | regrade <run directory>";
 
-export type Dirs = { root: string; out: string };
+type Graded = { results: TestResult[]; summary: Summary };
 
-const savedTo = (dirs: Dirs, split: Split) => ({
-  conversations: join(dirs.out, agent.name, split, "conversations.json"),
-  results: join(dirs.out, agent.name, split, "results.json"),
-});
+const shown = (root: string, path: string) => relative(root, path).replaceAll("\\", "/");
 
-async function gradeAndReport(
-  dirs: Dirs,
-  split: Split,
-  cases: TestCase[],
-  conversations: Conversation[],
-): Promise<string> {
+async function casesOf(root: string, split: Split) {
+  const data = await loadSplit(root, split);
+  if (data.cases.length === 0) {
+    throw new Error(
+      `no ${split} cases: ${shown(root, caseDir(root, split))} holds no case files. Write them as docs/writing-cases.md describes.`,
+    );
+  }
+  return data;
+}
+
+function gradeAll(split: Split, cases: TestCase[], conversations: Conversation[]): Graded {
   const results = conversations.map((conversation) => {
     const testCase = cases.find((c) => c.id === conversation.case_id);
-    if (!testCase) throw new Error(`no ${split} case with id ${conversation.case_id}`);
+    if (!testCase) throw new Error(`the run holds ${conversation.case_id}, which is not a ${split} case`);
     return grade(testCase, conversation);
   });
-  await writeJson(savedTo(dirs, split).results, TestResult.array(), results);
+  return { results, summary: summarize(split, cases, results) };
+}
+
+function report(root: string, dir: string, { results, summary }: Graded): string {
   const lines = results.map((result) => {
     const verdict = passed(result)
       ? `PASS  ${result.observed}`
-      : `FAIL  ${result.failures.map((f) => `${f.kind}: ${f.detail}`).join("; ")}`;
-    return `  ${result.case_id.padEnd(30)} ${verdict}`;
+      : `FAIL  ${[
+          result.observed !== result.expected && `expected ${result.expected}, observed ${result.observed}`,
+          ...result.failures.map((f) => `${f.kind}: ${f.detail}`),
+        ]
+          .filter(Boolean)
+          .join("; ")}`;
+    const blocked = result.blocked_attempts.length > 0 ? `  (blocked: ${result.blocked_attempts.join("; ")})` : "";
+    return `  ${result.case_id.padEnd(32)} ${verdict}${blocked}`;
   });
-  return [`agent: ${agent.name}`, ...lines, "", ...summarize(results).map(formatSummary)].join("\n");
+  return [`agent: ${summary.agent}`, `run: ${shown(root, dir)}`, ...lines, "", formatSummary(summary)].join("\n");
 }
 
-async function run(dirs: Dirs, split: Split): Promise<string> {
-  const [fixtures, cases] = await Promise.all([loadFixtures(dirs.root), loadCases(dirs.root, split)]);
+async function newRunDir(parent: string): Promise<string> {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const dir = join(parent, `${stamp}-${randomBytes(2).toString("hex")}`);
+  await mkdir(parent, { recursive: true });
+  await mkdir(dir);
+  return dir;
+}
+
+async function run(root: string, agent: Agent, split: Split, parent: string) {
+  const [shop, { cases, orders }] = await Promise.all([loadShop(root), casesOf(root, split)]);
+  const dir = await newRunDir(join(parent, agent.name));
   const conversations: Conversation[] = [];
-  for (const testCase of cases) conversations.push(await runCase(agent, testCase, fixtures));
-  await writeJson(savedTo(dirs, split).conversations, Conversation.array(), conversations);
-  return gradeAndReport(dirs, split, cases, conversations);
-}
-
-async function regrade(dirs: Dirs, split: Split): Promise<string> {
-  const [cases, conversations] = await Promise.all([
-    loadCases(dirs.root, split),
-    readJson(savedTo(dirs, split).conversations, Conversation.array()),
-  ]);
-  return gradeAndReport(dirs, split, cases, conversations);
-}
-
-export async function main(
-  args: string[],
-  dirs: Dirs = { root: process.cwd(), out: join(process.cwd(), "traces") },
-): Promise<string> {
-  const [command, ...rest] = args;
-  if ((command === "tune" || command === "score") && rest.length === 0) {
-    return run(dirs, RUNS[command]);
+  for (const testCase of cases) {
+    const conversation = await runCase(agent, testCase, createBackend({ shop, orders }, { outage: testCase.outage }), {
+      model: recordedModel(recordingPath(root, agent.name, split, testCase.id)),
+    });
+    await writeJson(join(dir, "conversations", `${testCase.id}.json`), Conversation, conversation);
+    conversations.push(conversation);
   }
-  const split = Split.safeParse(rest[0]);
-  if (command === "regrade" && rest.length === 1 && split.success) return regrade(dirs, split.data);
-  throw new Error(USAGE);
+  const graded = gradeAll(split, cases, conversations);
+  await writeJson(join(dir, "results.json"), TestResult.array(), graded.results);
+  await writeJson(join(dir, "summary.json"), Summary, graded.summary);
+  return { dir, graded };
+}
+
+async function regrade(root: string, dir: string): Promise<string> {
+  const conversations = await readConversations(dir);
+  const splits = [...new Set(conversations.map((c) => c.split))];
+  const [split] = splits;
+  if (!split || splits.length > 1) {
+    throw new Error(`${shown(root, dir)} must hold the conversations of one split`);
+  }
+  const { cases } = await casesOf(root, split);
+  return report(root, dir, gradeAll(split, cases, conversations));
+}
+
+export async function main(args: string[], root: string = process.cwd()): Promise<string> {
+  let parsed;
+  try {
+    parsed = parseArgs({ args, options: { agent: { type: "string" } }, allowPositionals: true, strict: true });
+  } catch {
+    throw new Error(USAGE);
+  }
+  const [command, ...rest] = parsed.positionals;
+  const name = parsed.values.agent ?? DEFAULT_AGENT;
+
+  if (command === "regrade" && rest.length === 1 && parsed.values.agent === undefined) {
+    return regrade(root, resolve(root, rest[0]!));
+  }
+  if ((command !== "tune" && command !== "score") || rest.length > 0) throw new Error(USAGE);
+  const agent = agents[name];
+  if (!agent) throw new Error(`no agent named ${name}. Agents: ${Object.keys(agents).join(", ")}`);
+
+  if (command === "tune") {
+    const { dir, graded } = await run(root, agent, "tuning", join(root, "traces"));
+    return report(root, dir, graded);
+  }
+  const git = gitState(root);
+  const cases_sha256 = await hashCaseFiles(root, "held-out");
+  const { dir, graded } = await run(root, agent, "held-out", join(root, "results"));
+  await appendLedger(root, {
+    time: new Date().toISOString(),
+    agent: agent.name,
+    run: shown(root, dir),
+    ...git,
+    cases_sha256,
+    summary: graded.summary,
+  });
+  return report(root, dir, graded);
 }
 
 if (import.meta.main) {

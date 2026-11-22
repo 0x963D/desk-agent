@@ -1,49 +1,51 @@
 import type { Agent, AgentReply } from "../agent.ts";
-import type { Handover } from "../shapes.ts";
+import type { Handover, Order, ToolError } from "../shapes.ts";
 import { normalize } from "../text.ts";
-import type { Order } from "../tools.ts";
 
-const ASKS_FOR_HUMAN = /\b(om|operator|coleg|human|person|representative)\b/;
-const WANTS_REFUND = /\b(retur\w*|rambursa\w*|refund\w*|return\w*|money back)\b/;
-const WANTS_STATUS = /\b(unde|stadiu\w*|status|where|track\w*)\b/;
-const ORDER_NUMBER = /\bex-\d+\b/;
-const ROMANIAN = /\b(buna|comanda|vreau|unde|este|pentru|multumesc)\b/;
+const ASKS_FOR_PERSON = /\b(om|operator|persoana|coleg|human|person|someone)\b/;
+const COMMISSION = /\b(tatuaj\w*|tattoo\w*|comision\w*|commission\w*|programare)\b/;
+const CANCEL = /\b(anul\w*|cancel\w*)\b/;
+const RETURN = /\b(retur\w*|return\w*|refund\w*|rambursa\w*)\b/;
+const STATUS = /\b(unde|cand|status|stadiu\w*|where|when|track\w*)\b/;
+const ORDER_NUMBER = /\bam-\d{4}\b/;
+const EMAIL = /[^\s@,;:]+@[^\s@,;:]+\.[a-z]{2,}/;
+const ROMANIAN = /\b(buna|comanda|vreau|unde|cand|este|pentru|multumesc|emailul|sa)\b/;
 
 const SAY = {
   ro: {
-    askOrder: "Sigur, vă ajut. Care este numărul comenzii (de forma EX-1234)?",
-    unknownOrder: (id: string) => `Nu găsesc comanda ${id}. Verificați, vă rog, numărul.`,
-    notYours: "Nu pot oferi detalii despre o comandă care nu aparține contului dumneavoastră.",
-    placed: (id: string) => `Comanda ${id} este în pregătire și nu a fost încă expediată.`,
-    shipped: (id: string, tracking: string) =>
-      `Comanda ${id} este în drum spre dumneavoastră. Număr de urmărire: ${tracking}.`,
+    askDetails: "Vă ajut cu plăcere. Îmi spuneți numărul comenzii (AM-1234) și adresa de email folosită la comandă?",
+    notFound: "Nu găsesc nicio comandă cu acest număr și acest email, așa că nu pot da detalii.",
+    paid: (id: string) => `Comanda ${id} este plătită și intră curând în producție.`,
+    inProduction: (id: string) => `Comanda ${id} este în producție.`,
+    shipped: (id: string, url: string) => `Comanda ${id} a fost expediată. O puteți urmări aici: ${url}`,
     delivered: (id: string, date: string) => `Comanda ${id} a fost livrată pe ${date}.`,
-    refundFiled: (id: string) =>
-      `Am înregistrat cererea de retur pentru comanda ${id}. Un coleg o va verifica și veți primi confirmarea pe e-mail.`,
-    refundDenied: (id: string) => `Comanda ${id} nu îndeplinește condițiile de retur.`,
-    handover: "Vă transfer către un coleg, care va prelua conversația.",
+    filed: (id: string) =>
+      `Am înregistrat cererea pentru comanda ${id}. Echipa trebuie să o aprobe și vă scrie pe email.`,
+    denied: (message: string) => `Nu pot înregistra cererea: ${message}`,
+    handover: "Vă transfer către un coleg, care preia conversația.",
   },
   en: {
-    askOrder: "Happy to help. What is the order number (it looks like EX-1234)?",
-    unknownOrder: (id: string) => `I can't find order ${id}. Please check the number.`,
-    notYours: "I can't share details of an order that isn't on your account.",
-    placed: (id: string) => `Order ${id} is being prepared and has not shipped yet.`,
-    shipped: (id: string, tracking: string) =>
-      `Order ${id} is on its way. Tracking number: ${tracking}.`,
+    askDetails: "Happy to help. What is your order number (AM-1234) and the email you ordered with?",
+    notFound: "I can't find an order with that number and email, so I can't share any details.",
+    paid: (id: string) => `Order ${id} is paid and goes into production soon.`,
+    inProduction: (id: string) => `Order ${id} is in production.`,
+    shipped: (id: string, url: string) => `Order ${id} has shipped. You can track it here: ${url}`,
     delivered: (id: string, date: string) => `Order ${id} was delivered on ${date}.`,
-    refundFiled: (id: string) =>
-      `I've filed a return request for order ${id}. A colleague will review it and you'll get a confirmation by email.`,
-    refundDenied: (id: string) => `Order ${id} doesn't meet the conditions for a return.`,
+    filed: (id: string) =>
+      `I've filed the request for order ${id}. Staff must approve it, and they will email you.`,
+    denied: (message: string) => `I can't file that request: ${message}`,
     handover: "I'm passing you to a colleague, who will take over this conversation.",
   },
 };
 
-function describeStatus(order: Order, say: (typeof SAY)["en"]): string {
+function describe(order: Order, say: (typeof SAY)["en"]): string {
   switch (order.status) {
-    case "placed":
-      return say.placed(order.order_id);
+    case "paid":
+      return say.paid(order.order_id);
+    case "in_production":
+      return say.inProduction(order.order_id);
     case "shipped":
-      return say.shipped(order.order_id, order.tracking_number);
+      return say.shipped(order.order_id, order.tracking_url);
     case "delivered":
       return say.delivered(order.order_id, order.delivered_on);
   }
@@ -51,44 +53,39 @@ function describeStatus(order: Order, say: (typeof SAY)["en"]): string {
 
 export const ruleBasedAgent: Agent = {
   name: "rule-based",
-  open({ customer_id, tools }) {
+  open({ tools }) {
     return async (history): Promise<AgentReply> => {
       const messages = history.filter((turn) => turn.role === "customer").map((turn) => turn.text);
-      const latest = messages.at(-1) ?? "";
       const said = normalize(messages.join(" "));
       const say = SAY[ROMANIAN.test(said) ? "ro" : "en"];
       const order_id = said.match(ORDER_NUMBER)?.[0].toUpperCase();
+      const email = said.match(EMAIL)?.[0];
 
       const handOver = async (reason: Handover["reason"]): Promise<AgentReply> => {
-        await tools.call("hand_over_to_human", { reason, summary: latest, order_id });
+        await tools.call("hand_over", { reason, summary: messages.join("\n"), order_id });
         return { text: say.handover, status: "open" };
       };
+      const onError = (error: ToolError): Promise<AgentReply> | AgentReply => {
+        if (error.code === "unavailable") return handOver("system_failure");
+        if (error.code === "policy_denied" && error.reason === "large_refund") {
+          return handOver("staff_decision");
+        }
+        if (error.code === "policy_denied") return { text: say.denied(error.message), status: "refused" };
+        return { text: say.notFound, status: "refused" };
+      };
 
-      if (ASKS_FOR_HUMAN.test(said)) return handOver("customer_asked");
+      if (ASKS_FOR_PERSON.test(said)) return handOver("customer_asked");
+      if (COMMISSION.test(said)) return handOver("commission_or_booking");
+      const kind = CANCEL.test(said) ? "cancellation" : RETURN.test(said) ? "return" : undefined;
+      if (!kind && !STATUS.test(said)) return handOver("staff_decision");
+      if (!order_id || !email) return { text: say.askDetails, status: "open" };
 
-      let order: Order | undefined;
-      if (order_id) {
-        const found = await tools.call("lookup_order", { order_id });
-        if (!found.ok) return { text: say.unknownOrder(order_id), status: "open" };
-        if (found.data.customer_id !== customer_id) return { text: say.notYours, status: "refused" };
-        order = found.data;
+      if (!kind) {
+        const found = await tools.call("lookup_order", { order_id, email });
+        return found.ok ? { text: describe(found.data, say), status: "resolved" } : onError(found.error);
       }
-
-      const wantsRefund = WANTS_REFUND.test(said);
-      if (!wantsRefund && !WANTS_STATUS.test(said)) return handOver("out_of_scope");
-      if (!order) return { text: say.askOrder, status: "open" };
-      if (!wantsRefund) return { text: describeStatus(order, say), status: "resolved" };
-
-      const refund = { kind: "refund", order_id: order.order_id };
-      const policy = await tools.call("check_policy", refund);
-      if (!policy.ok || !policy.data.allowed) {
-        return { text: say.refundDenied(order.order_id), status: "refused" };
-      }
-      await tools.call("request_approval", {
-        order_id: order.order_id,
-        change: { kind: "refund", reason: latest },
-      });
-      return { text: say.refundFiled(order.order_id), status: "resolved" };
+      const filed = await tools.call("file_request", { order_id, email, change: { kind } });
+      return filed.ok ? { text: say.filed(order_id), status: "resolved" } : onError(filed.error);
     };
   },
 };
