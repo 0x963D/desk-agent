@@ -111,7 +111,7 @@ When a case names a handover reason, use this table.
 | `customer_name` | The invented name of the customer. |
 | `status` | `paid`, `in_production`, `shipped` or `delivered`. |
 | `placed_on` | A date. |
-| `delivered_on` | A date. Required when the status is `delivered`, and absent otherwise. |
+| `delivered_on` | A date, no earlier than `placed_on` and no later than the business date. Required when the status is `delivered`, and absent otherwise. |
 | `tracking_url` | A link at `curier.example`. Required when the status is `shipped` or `delivered`, and absent otherwise. |
 | `items` | One or more. Each has a `title`, a `kind` of `open`, `limited` or `commission`, a `size` and a `price_ron`. |
 | `total_ron` | The sum of the item prices. |

@@ -63,7 +63,8 @@ export async function connectInMemory(backend: Tools): Promise<{ tools: Tools; c
 
 if (import.meta.main) {
   const root = process.cwd();
-  const [shop, orders] = await Promise.all([loadShop(root), loadOrders(root, "tuning")]);
+  const shop = await loadShop(root);
+  const orders = await loadOrders(root, "tuning", shop);
   serveStdio(() => shopServer(createBackend({ shop, orders })));
   console.error(`The five Studio Cobalt functions are on stdio, over the ${orders.length} tuning orders.`);
 }

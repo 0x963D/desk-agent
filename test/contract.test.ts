@@ -37,7 +37,7 @@ test("missing case folders and fixture files load as an empty split", async () =
   await rm(join(root, "cases"), { recursive: true });
   await rm(join(root, "fixtures", "held-out.yaml"));
 
-  expect(await loadSplit(root, "held-out")).toEqual({ cases: [], orders: [] });
+  expect(await loadSplit(root, "held-out")).toMatchObject({ cases: [], orders: [] });
 });
 
 async function edit(root: string, path: string, from: string | RegExp, to: string) {
@@ -63,6 +63,8 @@ test.each<[string, string, string | RegExp, string, RegExp]>([
   ["a handover reason on a case that is not handed over", CASE, "outcome: resolved", "outcome: resolved\n  handover_reason: complaint", /handover_reason/],
   ["a refused case that expects a request", CASE, "outcome: resolved", "outcome: refused", /requests/],
   ["a misspelled expectation", CASE, "reply_mentions:", "reply_mention:", /reply_mention/],
+  ["an order delivered after the business date", ORDERS, "delivered_on: 2026-11-14", "delivered_on: 2026-11-21", /SC-1004.*after the business date 2026-11-20/],
+  ["an order delivered before it was placed", ORDERS, "delivered_on: 2026-11-14", "delivered_on: 2026-11-06", /delivered_on.*placed_on/],
   ["a delivered order without a delivery date", ORDERS, "    delivered_on: 2026-11-14\n", "", /delivered_on/],
   ["a paid order with a tracking link", ORDERS, "status: paid\n", "status: paid\n    tracking_url: https://curier.example/track/X\n", /tracking_url/],
   ["more than four customer turns", CASE, /turns:\n/, "turns:\n  - a\n  - b\n  - c\n", /turns/],

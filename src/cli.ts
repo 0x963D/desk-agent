@@ -6,7 +6,7 @@ import { parseArgs } from "node:util";
 import type { Agent } from "./agent.ts";
 import { agents, DEFAULT_AGENT } from "./agents/index.ts";
 import { createBackend } from "./backend.ts";
-import { caseDir, loadShop, loadSplit, readConversations, writeJson } from "./files.ts";
+import { caseDir, loadSplit, readConversations, writeJson } from "./files.ts";
 import { grade, passed } from "./grade.ts";
 import { appendLedger, gitState, hashCaseFiles, ledgerFile, readLedger } from "./ledger.ts";
 import { recordedModel, recordingPath, recordModel, type Recorder } from "./model.ts";
@@ -66,7 +66,7 @@ async function newRunDir(parent: string): Promise<string> {
 }
 
 async function run(root: string, agent: Agent, split: Split, parent: string, record?: (file: string) => Recorder) {
-  const [shop, { cases, orders }] = await Promise.all([loadShop(root), casesOf(root, split)]);
+  const { shop, cases, orders } = await casesOf(root, split);
   const dir = await newRunDir(join(parent, agent.name));
   const conversations: Conversation[] = [];
   for (const testCase of cases) {

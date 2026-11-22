@@ -57,7 +57,7 @@ export function loadShop(root: string): Promise<Shop> {
   return readYaml(join(root, "fixtures", "shop.yaml"), Shop);
 }
 
-export async function loadOrders(root: string, split: Split): Promise<Order[]> {
+export async function loadOrders(root: string, split: Split, shop: Shop): Promise<Order[]> {
   const file = orderFile(root, split);
   const text = await unlessMissing(readFile(file, "utf8"), undefined);
   if (text === undefined) return [];
@@ -71,6 +71,13 @@ export async function loadOrders(root: string, split: Split): Promise<Order[]> {
     }
     if (seen.has(order_id)) throw new Error(`${file}: ${order_id} appears twice`);
     seen.add(order_id);
+  }
+  for (const order of orders) {
+    if (order.status === "delivered" && order.delivered_on > shop.business_date) {
+      throw new Error(
+        `${file}: ${order.order_id} was delivered on ${order.delivered_on}, after the business date ${shop.business_date}`,
+      );
+    }
   }
   return orders;
 }
@@ -89,11 +96,14 @@ async function loadCase(file: string, split: Split): Promise<TestCase> {
   return testCase;
 }
 
-export async function loadSplit(root: string, split: Split): Promise<{ cases: TestCase[]; orders: Order[] }> {
-  const files = await filesIn(caseDir(root, split), ".yaml");
+export async function loadSplit(
+  root: string,
+  split: Split,
+): Promise<{ shop: Shop; cases: TestCase[]; orders: Order[] }> {
+  const [files, shop] = await Promise.all([filesIn(caseDir(root, split), ".yaml"), loadShop(root)]);
   const [cases, orders] = await Promise.all([
     Promise.all(files.map((file) => loadCase(file, split))),
-    loadOrders(root, split),
+    loadOrders(root, split, shop),
   ]);
   const known = new Set(orders.map((order) => order.order_id));
   cases.forEach((testCase, at) => {
@@ -103,7 +113,7 @@ export async function loadSplit(root: string, split: Split): Promise<{ cases: Te
       }
     }
   });
-  return { cases, orders };
+  return { shop, cases, orders };
 }
 
 export async function readConversations(dir: string): Promise<Conversation[]> {

@@ -47,13 +47,14 @@ Every shape is a zod schema in `src/shapes.ts`, and its TypeScript type is deriv
 | `Summary` | The numbers for one run of one split. | `<run>/summary.json` |
 | `LedgerEntry` | One scoring run: the time, the agent, the commit, the tree state, a hash of the held-out cases and the summary. | `results/ledger.jsonl` |
 
-Six choices in the shapes remove states that should not exist.
+Seven choices in the shapes and the loader remove states that should not exist.
 
 - The expectation is a union on `outcome`. `handover_reason` exists only on `handed_over`, and a `refused` case has no `requests`, because a refusal changes nothing.
 - An order is a union on `status`. `tracking_url` exists only once the order ships, and `delivered_on` exists only once it arrives.
 - A conversation stores no outcome, no requests and no handover. `src/trace.ts` derives all three from the accepted function calls in the turns, so a stored copy cannot disagree with them.
 - A test result has no `passed` flag and no outcome failure. `passed` in `src/grade.ts` is true when the observed outcome equals the expected one and the list of failures is empty. A saved result whose outcomes differ therefore never reads as a pass.
 - A case file is strict. A misspelled key such as `reply_never_mention` fails the load. A loose schema would drop the key and silently remove a safety check.
+- An order cannot be delivered before it was placed, and the fixture loader refuses an order delivered after the business date. Either one would put a return or a damage claim inside its window when it is not.
 - A case names each request kind at most once per order. The shop files one request of a kind per order, so a second expectation could never be met, and the grader's one-pass matching stays exact.
 
 Data fields use `snake_case` everywhere, in case files, traces, function inputs and code.
@@ -70,7 +71,7 @@ Data fields use `snake_case` everywhere, in case files, traces, function inputs 
 | `file_request` | `order_id`, `email`, `change` | A request id with the status `pending_approval`. |
 | `hand_over` | `reason`, `summary`, optional `order_id` | A handover id. |
 
-A customer is verified when a function receives an order number and the email on that order. The comparison ignores capitals and surrounding spaces. An unknown order and a wrong email return the same `not_found` error, so the answer reveals nothing about which one was wrong.
+A new address, a damage description and a handover summary must hold more than spaces, or the function answers `invalid_input`. A customer is verified when a function receives an order number and the email on that order. The comparison ignores capitals and surrounding spaces. An unknown order and a wrong email return the same `not_found` error, so the answer reveals nothing about which one was wrong.
 
 Errors are values: `{ ok: false, error: { code, message } }`. The message is written for a model to read and act on. The four codes are `invalid_input`, `not_found`, `policy_denied` and `unavailable`. A `policy_denied` error also carries one reason from a closed list.
 

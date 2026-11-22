@@ -176,6 +176,16 @@ test("an input that breaks the contract answers invalid_input with a readable me
   expect(result).toMatchObject({ ok: false, error: { code: "invalid_input", message: expect.stringContaining("new_address") } });
 });
 
+test.each([
+  ["a delivery change to a blank address", "file_request", request("SC-1001", { kind: "delivery_change", new_address: " \t " })],
+  ["a damage claim with a blank description", "file_request", request("SC-1004", { kind: "damage", description: "  ", remedy: "reprint" })],
+  ["a handover with a blank summary", "hand_over", { reason: "customer_asked", summary: "\n" }],
+] as const)("%s answers invalid_input", async (_, name, input) => {
+  const tools = await testBackend();
+
+  expect(await tools.call(name, input)).toMatchObject({ ok: false, error: { code: "invalid_input" } });
+});
+
 test.each(["lookup_order", "lookup_account", "check_policy", "file_request"] as const)(
   "during an outage %s answers unavailable",
   async (name) => {

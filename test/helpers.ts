@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Agent, AgentReply } from "../src/agent.ts";
 import { createBackend, type World } from "../src/backend.ts";
-import { loadShop, loadSplit } from "../src/files.ts";
+import { loadSplit } from "../src/files.ts";
 import type { ModelClient } from "../src/model.ts";
 import { TestCase, type Split } from "../src/shapes.ts";
 import type { Tools } from "../src/tools.ts";
@@ -20,8 +20,10 @@ export async function testRepo(): Promise<string> {
   return root;
 }
 
+const REPO = await testRepo();
+
 export async function testSplit(split: Split = "tuning"): Promise<{ cases: TestCase[]; world: World }> {
-  const [shop, { cases, orders }] = await Promise.all([loadShop(ROOT), loadSplit(TEST_REPO, split)]);
+  const { shop, cases, orders } = await loadSplit(REPO, split);
   return { cases, world: { shop, orders } };
 }
 
@@ -30,7 +32,7 @@ export const testWorld = async (split: Split = "tuning") => (await testSplit(spl
 export const testBackend = async (options: { outage?: boolean } = {}) =>
   createBackend(await testWorld(), options);
 
-const { orders: TUNING_ORDERS } = await loadSplit(TEST_REPO, "tuning");
+const { orders: TUNING_ORDERS } = await loadSplit(REPO, "tuning");
 
 export const verified = (order_id: string) => ({
   order_id,

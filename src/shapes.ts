@@ -64,7 +64,11 @@ export const Order = z
   .refine(
     (order) => Math.abs(order.items.reduce((sum, item) => sum + item.price_ron, 0) - order.total_ron) < 0.005,
     { message: "total_ron must equal the sum of the item prices", path: ["total_ron"] },
-  );
+  )
+  .refine((order) => order.status !== "delivered" || order.delivered_on >= order.placed_on, {
+    message: "delivered_on cannot come before placed_on",
+    path: ["delivered_on"],
+  });
 export type Order = z.infer<typeof Order>;
 
 export const RequestKind = z.enum(["cancellation", "return", "damage", "delivery_change"]);
@@ -97,11 +101,13 @@ export type Shop = z.infer<typeof Shop>;
 export const Remedy = z.enum(["reprint", "refund"]);
 export type Remedy = z.infer<typeof Remedy>;
 
+const FilledText = z.string().trim().min(1, "must hold text, not only spaces");
+
 export const Change = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("cancellation") }),
   z.object({ kind: z.literal("return") }),
-  z.object({ kind: z.literal("damage"), description: z.string().min(1), remedy: Remedy }),
-  z.object({ kind: z.literal("delivery_change"), new_address: z.string().min(1) }),
+  z.object({ kind: z.literal("damage"), description: FilledText, remedy: Remedy }),
+  z.object({ kind: z.literal("delivery_change"), new_address: FilledText }),
 ]);
 export type Change = z.infer<typeof Change>;
 
@@ -115,7 +121,7 @@ export const HandoverReason = z.enum([
 
 export const Handover = z.object({
   reason: HandoverReason,
-  summary: z.string().min(1),
+  summary: FilledText,
   order_id: z.string().optional(),
 });
 export type Handover = z.infer<typeof Handover>;
