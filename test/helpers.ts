@@ -2,19 +2,44 @@ import { cp, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Agent, AgentReply } from "../src/agent.ts";
-import { TestCase } from "../src/shapes.ts";
+import { createBackend, type World } from "../src/backend.ts";
+import { loadShop, loadSplit } from "../src/files.ts";
+import { TestCase, type Split } from "../src/shapes.ts";
 import type { Tools } from "../src/tools.ts";
 
 export const ROOT = join(import.meta.dirname, "..");
+const TEST_REPO = join(import.meta.dirname, "fixtures");
 
-export const tempDir = () => mkdtemp(join(tmpdir(), "fde-agent-"));
+export const tempDir = () => mkdtemp(join(tmpdir(), "desk-agent-"));
 
-export async function copyOfRepoData(): Promise<string> {
+export async function testRepo(): Promise<string> {
   const root = await tempDir();
-  await cp(join(ROOT, "cases"), join(root, "cases"), { recursive: true });
-  await cp(join(ROOT, "fixtures"), join(root, "fixtures"), { recursive: true });
+  await cp(TEST_REPO, root, { recursive: true });
+  await cp(join(ROOT, "fixtures", "shop.yaml"), join(root, "fixtures", "shop.yaml"));
   return root;
 }
+
+export async function testSplit(split: Split = "tuning"): Promise<{ cases: TestCase[]; world: World }> {
+  const [shop, { cases, orders }] = await Promise.all([loadShop(ROOT), loadSplit(TEST_REPO, split)]);
+  return { cases, world: { shop, orders } };
+}
+
+export const testWorld = async (split: Split = "tuning") => (await testSplit(split)).world;
+
+export const testBackend = async (options: { outage?: boolean } = {}) =>
+  createBackend(await testWorld(), options);
+
+const { orders: TUNING_ORDERS } = await loadSplit(TEST_REPO, "tuning");
+
+export const verified = (order_id: string) => ({
+  order_id,
+  email: TUNING_ORDERS.find((order) => order.order_id === order_id)?.email ?? "",
+});
+
+export const request = (order_id: string, change: Record<string, unknown>) => ({
+  ...verified(order_id),
+  change,
+});
 
 type Step = (tools: Tools) => AgentReply | Promise<AgentReply>;
 
@@ -32,19 +57,18 @@ export function scripted(...steps: Step[]): Agent {
   };
 }
 
-export function caseExpecting(expect: unknown, turns: string[] = ["Hello"]): TestCase {
+export function caseExpecting(
+  expect: unknown,
+  { turns = ["Hello"], outage = false }: { turns?: string[]; outage?: boolean } = {},
+): TestCase {
   return TestCase.parse({
-    id: "example",
+    id: "en-example",
     split: "tuning",
     language: "en",
-    customer_id: "C-1002",
+    category: "order-status",
     summary: "A case built by a test.",
+    outage,
     turns,
     expect,
   });
 }
-
-export const refundFor = (order_id: string) => ({
-  order_id,
-  change: { kind: "refund", reason: "broken" },
-});

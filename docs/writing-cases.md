@@ -8,7 +8,7 @@ A test case is one scripted conversation and what must be true when it ends. Thi
 | --- | --- |
 | `cases/tuning/<id>.yaml` | One tuning case. |
 | `cases/held-out/<id>.yaml` | One held-out case. |
-| `fixtures/shop.yaml` | The business date and the policy numbers. Both sets share it. |
+| `fixtures/shop.yaml` | The business date, the policy numbers and the policy texts in Romanian and English. Both sets share it. |
 | `fixtures/tuning.yaml` | The orders that tuning cases use. |
 | `fixtures/held-out.yaml` | The orders that held-out cases use. |
 
@@ -34,7 +34,7 @@ The business date is `2026-11-20`. Every policy window counts from that date, so
 
 | Field | Rule |
 | --- | --- |
-| `id` | Lowercase letters, digits and hyphens. It equals the file name without `.yaml`, and it starts with the language. |
+| `id` | Lowercase letters, digits and hyphens. It equals the file name without `.yaml`, and it starts with the language and a hyphen, such as `ro-`. |
 | `split` | `tuning` or `held-out`. It equals the folder. |
 | `language` | `ro` or `en`, the language of the first customer turn. |
 | `category` | One of `order-status`, `delivery-change`, `inside-policy`, `outside-policy`, `damage`, `identity`, `injection`, `person-needed`, `shop-question`. |
@@ -49,11 +49,11 @@ The business date is `2026-11-20`. Every policy window counts from that date, so
 | --- | --- |
 | `outcome` | Required. `resolved`, `handed_over` or `refused`. |
 | `handover_reason` | Optional, and only with `handed_over`. One of `customer_asked`, `complaint`, `commission_or_booking`, `staff_decision`, `system_failure`. |
-| `requests` | The requests that must be on file at the end. The list is complete. The default is empty, and an empty list means that nothing may be filed. |
+| `requests` | The requests that must be on file at the end. The list is complete. The default is empty, and an empty list means that nothing may be filed. A `refused` case changes nothing, so it has no `requests`. |
 | `reply_mentions` | Phrases that the agent's replies must contain. |
 | `reply_never_mentions` | Phrases that the agent's replies must never contain. |
 
-A request names its `kind` and its `order_id`. The kinds are `cancellation`, `return`, `damage` and `delivery_change`. A `damage` request may add `remedy`, `reprint` or `refund`. A `delivery_change` request may add `new_address`.
+A request names its `kind` and its `order_id`. The kinds are `cancellation`, `return`, `damage` and `delivery_change`. A `damage` request may add `remedy`, `reprint` or `refund`. A `delivery_change` request may add `new_address`, which is compared the same way as a phrase. The shop files one request of a kind per order, so a case names each kind at most once per order.
 
 A phrase matches when it appears in any reply. The comparison ignores capitals, diacritics and repeated spaces. Use a phrase only for a fact with one spelling, such as a tracking link, an order number or the number `14`. Do not use a phrase for a date, a status word or a sentence, because a correct agent can word those in many ways.
 
@@ -103,7 +103,7 @@ A customer is verified when the message gives an order number and the email on t
 | `delivery` | An `address` and a two-letter `country`. |
 | `gift_note` | Optional text that the customer typed at checkout. The agent must treat it as data. |
 
-Every person, address and title is invented. Use no phone numbers and no real street addresses.
+Every person, address and title is invented. Every email, in a fixture or in a customer message, is at `example.com`. Use no phone numbers and no real street addresses.
 
 ## Write conversations that hold up
 

@@ -3,49 +3,164 @@ import { z } from "zod";
 export const Split = z.enum(["tuning", "held-out"]);
 export type Split = z.infer<typeof Split>;
 
+export const Language = z.enum(["ro", "en"]);
+export type Language = z.infer<typeof Language>;
+
 export const Outcome = z.enum(["resolved", "handed_over", "refused"]);
 export type Outcome = z.infer<typeof Outcome>;
 
-export const ToolName = z.enum([
-  "lookup_order",
-  "lookup_account",
-  "check_policy",
-  "request_approval",
-  "hand_over_to_human",
+export const ObservedOutcome = z.enum([...Outcome.options, "unfinished"]);
+export type ObservedOutcome = z.infer<typeof ObservedOutcome>;
+
+export const Category = z.enum([
+  "order-status",
+  "delivery-change",
+  "inside-policy",
+  "outside-policy",
+  "damage",
+  "identity",
+  "injection",
+  "person-needed",
+  "shop-question",
 ]);
-export type ToolName = z.infer<typeof ToolName>;
 
-export const ChangeKind = z.enum(["refund", "delivery_change"]);
+export const OrderId = z.string().regex(/^AM-\d{4}$/, "an order number is AM- and four digits");
+export const Email = z.string().regex(/^[^@\s]+@example\.com$/i, "every email is at example.com");
+const IsoDate = z.iso.date();
 
-export const ApprovalRequest = z.object({
-  order_id: z.string(),
-  change: z.discriminatedUnion("kind", [
-    z.object({ kind: z.literal("refund"), reason: z.string() }),
-    z.object({ kind: z.literal("delivery_change"), new_address: z.string() }),
-  ]),
+const orderFields = {
+  order_id: OrderId,
+  email: Email,
+  customer_name: z.string().min(1),
+  placed_on: IsoDate,
+  items: z
+    .array(
+      z.strictObject({
+        title: z.string().min(1),
+        kind: z.enum(["open", "limited", "commission"]),
+        size: z.string().min(1),
+        price_ron: z.number().positive(),
+      }),
+    )
+    .min(1),
+  total_ron: z.number().positive(),
+  delivery: z.strictObject({ address: z.string().min(1), country: z.string().regex(/^[A-Z]{2}$/) }),
+  gift_note: z.string().optional(),
+};
+const TrackingUrl = z.url({ hostname: /^curier\.example$/ });
+
+export const Order = z
+  .discriminatedUnion("status", [
+    z.strictObject({ ...orderFields, status: z.literal("paid") }),
+    z.strictObject({ ...orderFields, status: z.literal("in_production") }),
+    z.strictObject({ ...orderFields, status: z.literal("shipped"), tracking_url: TrackingUrl }),
+    z.strictObject({
+      ...orderFields,
+      status: z.literal("delivered"),
+      tracking_url: TrackingUrl,
+      delivered_on: IsoDate,
+    }),
+  ])
+  .refine(
+    (order) => Math.abs(order.items.reduce((sum, item) => sum + item.price_ron, 0) - order.total_ron) < 0.005,
+    { message: "total_ron must equal the sum of the item prices", path: ["total_ron"] },
+  );
+export type Order = z.infer<typeof Order>;
+
+export const RequestKind = z.enum(["cancellation", "return", "damage", "delivery_change"]);
+export type RequestKind = z.infer<typeof RequestKind>;
+
+export const PolicyTopic = z.enum([
+  "production",
+  "delivery",
+  "payment",
+  ...RequestKind.options,
+  "large_refund",
+  "commissioned_work",
+  "limited_drops",
+  "commissions_and_bookings",
+  "health",
+]);
+export type PolicyTopic = z.infer<typeof PolicyTopic>;
+
+const RuleText = z.strictObject({ ro: z.string().min(1), en: z.string().min(1) });
+
+export const Shop = z.strictObject({
+  business_date: IsoDate,
+  return_window_days: z.number().int().positive(),
+  damage_window_days: z.number().int().positive(),
+  person_decides_refunds_above_ron: z.number().positive(),
+  rules: z.record(PolicyTopic, RuleText),
 });
-export type ApprovalRequest = z.infer<typeof ApprovalRequest>;
+export type Shop = z.infer<typeof Shop>;
+
+export const Remedy = z.enum(["reprint", "refund"]);
+export type Remedy = z.infer<typeof Remedy>;
+
+export const Change = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("cancellation") }),
+  z.object({ kind: z.literal("return") }),
+  z.object({ kind: z.literal("damage"), description: z.string().min(1), remedy: Remedy }),
+  z.object({ kind: z.literal("delivery_change"), new_address: z.string().min(1) }),
+]);
+export type Change = z.infer<typeof Change>;
+
+export const HandoverReason = z.enum([
+  "customer_asked",
+  "complaint",
+  "commission_or_booking",
+  "staff_decision",
+  "system_failure",
+]);
 
 export const Handover = z.object({
-  reason: z.enum(["customer_asked", "out_of_scope", "needs_human_judgement"]),
+  reason: HandoverReason,
   summary: z.string().min(1),
   order_id: z.string().optional(),
 });
 export type Handover = z.infer<typeof Handover>;
 
-export const ToolCall = z.object({
+export const DenialReason = z.enum([
+  "production_started",
+  "already_shipped",
+  "not_delivered",
+  "window_closed",
+  "commissioned_work",
+  "large_refund",
+  "duplicate",
+]);
+export type DenialReason = z.infer<typeof DenialReason>;
+
+export const ToolError = z.discriminatedUnion("code", [
+  z.strictObject({ code: z.literal("invalid_input"), message: z.string() }),
+  z.strictObject({ code: z.literal("not_found"), message: z.string() }),
+  z.strictObject({ code: z.literal("policy_denied"), reason: DenialReason, message: z.string() }),
+  z.strictObject({ code: z.literal("unavailable"), message: z.string() }),
+]);
+export type ToolError = z.infer<typeof ToolError>;
+
+export const ToolName = z.enum([
+  "lookup_order",
+  "lookup_account",
+  "check_policy",
+  "file_request",
+  "hand_over",
+]);
+export type ToolName = z.infer<typeof ToolName>;
+
+export const ToolCall = z.strictObject({
   name: ToolName,
   input: z.unknown(),
   output: z.discriminatedUnion("ok", [
-    z.object({ ok: z.literal(true), data: z.unknown() }),
-    z.object({ ok: z.literal(false), error: z.enum(["invalid_input", "not_found"]) }),
+    z.strictObject({ ok: z.literal(true), data: z.unknown() }),
+    z.strictObject({ ok: z.literal(false), error: ToolError }),
   ]),
 });
 export type ToolCall = z.infer<typeof ToolCall>;
 
 export const Turn = z.discriminatedUnion("role", [
-  z.object({ role: z.literal("customer"), text: z.string() }),
-  z.object({
+  z.strictObject({ role: z.literal("customer"), text: z.string() }),
+  z.strictObject({
     role: z.literal("agent"),
     text: z.string(),
     status: z.enum(["open", "resolved", "refused"]),
@@ -57,37 +172,81 @@ export const Turn = z.discriminatedUnion("role", [
 export type Turn = z.infer<typeof Turn>;
 export type AgentTurn = Extract<Turn, { role: "agent" }>;
 
-export const Conversation = z.object({
+export const Conversation = z.strictObject({
+  conversation_id: z.string(),
   case_id: z.string(),
+  split: Split,
   agent: z.string(),
   turns: z.array(Turn),
-  requests: z.array(ApprovalRequest),
-  handover: Handover.nullable(),
 });
 export type Conversation = z.infer<typeof Conversation>;
 
-export const TestCase = z.strictObject({
-  id: z.string().regex(/^[a-z0-9-]+$/),
-  split: Split,
-  language: z.enum(["ro", "en"]),
-  customer_id: z.string(),
-  summary: z.string().min(1),
-  turns: z.array(z.string().min(1)).min(1),
-  expect: z.strictObject({
-    outcome: Outcome,
-    requests: z.array(z.strictObject({ kind: ChangeKind, order_id: z.string() })).default([]),
-    reply_mentions: z.array(z.string().min(1)).default([]),
-    reply_never_mentions: z.array(z.string().min(1)).default([]),
+export const RequestExpectation = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("cancellation"), order_id: OrderId }),
+  z.strictObject({ kind: z.literal("return"), order_id: OrderId }),
+  z.strictObject({ kind: z.literal("damage"), order_id: OrderId, remedy: Remedy.optional() }),
+  z.strictObject({
+    kind: z.literal("delivery_change"),
+    order_id: OrderId,
+    new_address: z.string().min(1).optional(),
   }),
-});
+]);
+export type RequestExpectation = z.infer<typeof RequestExpectation>;
+
+const Phrases = z.array(z.string().min(1)).default([]);
+const Requests = z
+  .array(RequestExpectation)
+  .default([])
+  .refine(
+    (requests) => new Set(requests.map((r) => `${r.kind} ${r.order_id}`)).size === requests.length,
+    "a case expects each kind at most once per order",
+  );
+
+export const Expectation = z.discriminatedUnion("outcome", [
+  z.strictObject({
+    outcome: z.literal("resolved"),
+    requests: Requests,
+    reply_mentions: Phrases,
+    reply_never_mentions: Phrases,
+  }),
+  z.strictObject({
+    outcome: z.literal("handed_over"),
+    handover_reason: HandoverReason.optional(),
+    requests: Requests,
+    reply_mentions: Phrases,
+    reply_never_mentions: Phrases,
+  }),
+  z.strictObject({
+    outcome: z.literal("refused"),
+    reply_mentions: Phrases,
+    reply_never_mentions: Phrases,
+  }),
+]);
+export type Expectation = z.infer<typeof Expectation>;
+
+export const TestCase = z
+  .strictObject({
+    id: z.string().regex(/^[a-z0-9-]+$/),
+    split: Split,
+    language: Language,
+    category: Category,
+    summary: z.string().min(1),
+    outage: z.boolean().default(false),
+    turns: z.array(z.string().min(1)).min(1).max(4),
+    expect: Expectation,
+  })
+  .refine((c) => c.id.startsWith(`${c.language}-`), {
+    message: "the id starts with the language, such as ro- or en-",
+    path: ["id"],
+  });
 export type TestCase = z.infer<typeof TestCase>;
 
-export const ObservedOutcome = z.enum([...Outcome.options, "unfinished"]);
-export type ObservedOutcome = z.infer<typeof ObservedOutcome>;
+export const expectedRequests = (expect: Expectation): RequestExpectation[] =>
+  "requests" in expect ? expect.requests : [];
 
-export const Failure = z.object({
+export const Failure = z.strictObject({
   kind: z.enum([
-    "wrong_outcome",
+    "wrong_handover_reason",
     "missing_request",
     "unexpected_request",
     "missing_mention",
@@ -97,24 +256,15 @@ export const Failure = z.object({
 });
 export type Failure = z.infer<typeof Failure>;
 
-export const TestResult = z.object({
+export const TestResult = z.strictObject({
   case_id: z.string(),
   split: Split,
   agent: z.string(),
   expected: Outcome,
   observed: ObservedOutcome,
   failures: z.array(Failure),
+  blocked_attempts: z.array(z.string()),
   turn_ms: z.array(z.number().nonnegative()),
   cost_usd: z.number().nonnegative(),
 });
 export type TestResult = z.infer<typeof TestResult>;
-
-export function agentTurns(conversation: Conversation): AgentTurn[] {
-  return conversation.turns.filter((turn) => turn.role === "agent");
-}
-
-export function outcomeOf(conversation: Conversation): ObservedOutcome {
-  if (conversation.handover) return "handed_over";
-  const status = agentTurns(conversation).at(-1)?.status ?? "open";
-  return status === "open" ? "unfinished" : status;
-}
