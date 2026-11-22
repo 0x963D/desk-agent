@@ -47,6 +47,8 @@ const RESOLVED: Turn[] = [
   { role: "agent", text: "Cu plăcere!", status: "resolved", tool_calls: [], duration_ms: 120.75, cost_usd: 0.0009 },
 ];
 
+const UNPLAYED = ["Și dacă nu ajunge până vineri?\n\nE un cadou.", "Mersi."];
+
 const shown = (turns: readonly Turn[]): ShownTurn[] =>
   turns.map((turn, at) =>
     turn.role === "customer"
@@ -55,30 +57,35 @@ const shown = (turns: readonly Turn[]): ShownTurn[] =>
   );
 
 test("a packet file reads back as the turns, the function calls and the handover it shows", () => {
-  expect(parseConversation(renderConversation("c0ffee01", HANDED_OVER), "x.md")).toEqual({
+  expect(parseConversation(renderConversation("c0ffee01", HANDED_OVER, UNPLAYED), "x.md")).toEqual({
     id: "c0ffee01",
     turns: shown(HANDED_OVER),
     handover: { turn: 2, reason: "system_failure", order: "SC-2001", summary: "Tracking for SC-2001 during an outage." },
+    unplayed: [
+      { message: 2, of: 3, text: UNPLAYED[0] },
+      { message: 3, of: 3, text: UNPLAYED[1] },
+    ],
   });
-  expect(parseConversation(renderConversation("c0ffee02", RESOLVED), "x.md")).toEqual({
+  expect(parseConversation(renderConversation("c0ffee02", RESOLVED, []), "x.md")).toEqual({
     id: "c0ffee02",
     turns: shown(RESOLVED),
     handover: undefined,
+    unplayed: [],
   });
   expect(() => parseConversation("# Conversation x\n\n## Turn 1, customer\n\nno quote\n", "x.md")).toThrow(
     /x\.md block 3: expected a quoted text/,
   );
 });
 
-function source(agent: string, case_id: string, turns: Turn[]): Source {
+function source(agent: string, case_id: string, turns: Turn[], unplayed: string[] = []): Source {
   const conversation = Conversation.parse({ conversation_id: `uuid-of-${case_id}-${agent}`, case_id, split: "held-out", agent, turns });
-  return { agent, run: `results/${agent}/run-1`, conversation };
+  return { agent, run: `results/${agent}/run-1`, conversation, unplayed };
 }
 
 const SOURCES = [
-  source("agent-alpha", "ro-secret-case", HANDED_OVER),
+  source("agent-alpha", "ro-secret-case", HANDED_OVER, UNPLAYED),
   source("agent-alpha", "en-alt-case", RESOLVED),
-  source("agent-beta", "ro-secret-case", HANDED_OVER),
+  source("agent-beta", "ro-secret-case", HANDED_OVER, UNPLAYED),
   source("agent-beta", "en-alt-case", RESOLVED),
 ];
 
@@ -100,11 +107,12 @@ async function packetDir() {
     join(work, "packet", "verdicts.jsonl"),
     ids.map((id) => JSON.stringify({ id, acceptable: false, ...Object.fromEntries(Criterion.options.map((c) => [c, c !== "facts"])), note: `Turn 2: ${HIDDEN_NOTE}` })).join("\n"),
   );
-  return { work, packet: join(work, "packet"), ids };
+  const cut = new Set(key.conversations.filter((c) => c.case_id === "ro-secret-case").map((c) => c.id));
+  return { work, packet: join(work, "packet"), ids, cut };
 }
 
 test("the sheet shows every listed conversation in the given order, and nothing that names its source or another verdict", async () => {
-  const { work, packet, ids } = await packetDir();
+  const { work, packet, ids, cut } = await packetDir();
   const listed = [ids[2]!, ids[0]!, ids[3]!];
   await writeFile(join(work, "ids.txt"), `${listed.join("\n")}\n`);
   const out = join(work, "sheet.html");
@@ -121,6 +129,8 @@ test("the sheet shows every listed conversation in the given order, and nothing 
   expect(html).toContain("Cu plăcere!");
   expect(html).toMatch(/<details class="call"><summary>Function call 1: <code>lookup_order<\/code>, returned the error unavailable<\/summary>/);
   expect(html).toContain("Handed over to a person in turn 2.");
+  expect(html).toContain("Customer message 2 of 3 · Not reached</p><div class=\"bubble\">Și dacă nu ajunge până vineri?\n\nE un cadou.</div>");
+  expect(html.match(/<div class="unreached">/g)?.length ?? 0).toBe(listed.filter((id) => cut.has(id)).length);
   for (const criterion of Criterion.options) expect(html).toContain(`value="${criterion}"`);
   expect(html).toContain("Every fact the agent states about an order, the shop's policy");
   expect(html).toContain("<h3>Shop policy</h3>");

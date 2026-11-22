@@ -11,7 +11,7 @@ import { ROOT, tempDir } from "./helpers.ts";
 
 const DOCS = { scope: "the scope", judging: "the rubric" };
 
-function source(agent: string, case_id: string, run = `results/${agent}/run-1`): Source {
+function source(agent: string, case_id: string, run = `results/${agent}/run-1`, unplayed: string[] = []): Source {
   const conversation = Conversation.parse({
     conversation_id: `uuid-of-${case_id}-${agent}`,
     case_id,
@@ -40,7 +40,7 @@ function source(agent: string, case_id: string, run = `results/${agent}/run-1`):
       },
     ],
   });
-  return { agent, run, conversation };
+  return { agent, run, conversation, unplayed };
 }
 
 const SOURCES = [
@@ -72,6 +72,26 @@ test("a packet file shows the turns, the function calls and the handover, and no
   }
   expect(files.get("scope.md")).toBe("the scope");
   expect(files.get("judging.md")).toBe("the rubric");
+});
+
+test("a conversation cut short by a handover lists the script's unplayed customer messages after it, marked as not reached", () => {
+  const cut = source("agent-alpha", "en-secret-case", "results/agent-alpha/run-1", ["Can it go to my office instead?", "Thanks."]);
+  const { files } = buildPacket([cut, source("agent-beta", "ro-alt-caz")], "seed", DOCS);
+  const [first, second] = conversationFiles(files).map(([, text]) => text);
+  const [withRest, whole] = first!.includes("## Not reached") ? [first!, second!] : [second!, first!];
+
+  expect(withRest).toContain(
+    [
+      "## Not reached",
+      "The conversation stopped at the handover. The script still held these customer messages, and the agent never received them.",
+      "### Customer message 2 of 3",
+      "> Can it go to my office instead?",
+      "### Customer message 3 of 3",
+      "> Thanks.\n",
+    ].join("\n\n"),
+  );
+  expect(withRest.indexOf("## Not reached")).toBeGreaterThan(withRest.indexOf("## Handover"));
+  expect(whole).not.toContain("Not reached");
 });
 
 test("the key maps each random id to its agent, run and case, and the verdict file lists the same ids in packet order", () => {
@@ -263,6 +283,7 @@ test("the saved model runs build a packet of 108 conversations, and filled verdi
   const printed = await main(["audit-packet", "--out", out, "--key", keyFile, "--seed", "test"], ROOT);
 
   expect(printed).toContain("packet: 108 conversations from 6 runs");
+  expect(printed).toContain("not reached: 14 conversations stopped at a handover before the script's last customer message");
   expect((await readdir(join(out, "conversations"))).length).toBe(108);
   expect(await readFile(join(out, "judging.md"), "utf8")).toBe(await readFile(join(ROOT, "docs", "judging.md"), "utf8"));
   expect(await readFile(join(out, "scope.md"), "utf8")).toBe(await readFile(join(ROOT, "docs", "scope.md"), "utf8"));

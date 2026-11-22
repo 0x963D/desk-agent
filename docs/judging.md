@@ -55,7 +55,7 @@ These examples are invented for this page. None comes from a saved conversation.
 A packet is one folder of conversations to judge. It holds this page, the scope, a `conversations` folder with one file per conversation and a `verdicts.jsonl` file to fill.
 
 - Each conversation file is named by a random id. It holds the numbered turns, each function call with its input and its result, and the handover if one was made. A function call is listed under the agent turn that made it, before that turn's reply.
-- The conversation stops at a handover, because a person now owns it. Any customer messages left in the script are not shown.
+- The conversation stops at a handover, because a person now owns it. When the script still held customer messages, the file lists them after the handover under **Not reached**. The agent never received them, so no reply to them is missing. They show what the customer still had to say, which the `handover` criterion asks about.
 - The packet does not say which agent wrote a conversation or what outcome its test case expects. Judge each conversation on its own. The same customer script appears more than once.
 - Work alone and from the packet only. Do not look for the conversations anywhere else, and do not read another reader's verdicts.
 

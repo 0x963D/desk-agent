@@ -3,12 +3,13 @@ import { createHash, randomBytes } from "node:crypto";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative } from "node:path";
 import { agents } from "./agents/index.ts";
-import { readConversations, unlessMissing, writeJson } from "./files.ts";
+import { loadSplit, readConversations, unlessMissing, writeJson } from "./files.ts";
 import { readLedger, scoredRunDir } from "./ledger.ts";
-import { AuditKey, Criterion, type Conversation, type Turn } from "./shapes.ts";
+import { AuditKey, Criterion, type Conversation, type Split, type TestCase, type Turn } from "./shapes.ts";
 import { handoverOf } from "./trace.ts";
 
-export type Source = { agent: string; run: string; conversation: Conversation };
+// `unplayed` holds the customer messages the case's script still held when the runner stopped at a handover.
+export type Source = { agent: string; run: string; conversation: Conversation; unplayed: readonly string[] };
 export type Packet = { key: AuditKey; files: ReadonlyMap<string, string> };
 
 function seeded(seed: string) {
@@ -34,7 +35,10 @@ const quote = (text: string) =>
 
 const json = (value: unknown) => ["```json", JSON.stringify(value, null, 2), "```"].join("\n");
 
-export function renderConversation(id: string, turns: readonly Turn[]): string {
+export const NOT_REACHED =
+  "The conversation stopped at the handover. The script still held these customer messages, and the agent never received them.";
+
+export function renderConversation(id: string, turns: readonly Turn[], unplayed: readonly string[]): string {
   const blocks = [`# Conversation ${id}`];
   let handoverTurn = 0;
   turns.forEach((turn, at) => {
@@ -65,6 +69,15 @@ export function renderConversation(id: string, turns: readonly Turn[]): string {
   } else {
     blocks.push("The agent made no handover.");
   }
+  if (unplayed.length > 0) {
+    const played = turns.filter((turn) => turn.role === "customer").length;
+    const total = played + unplayed.length;
+    blocks.push(
+      "## Not reached",
+      NOT_REACHED,
+      ...unplayed.flatMap((text, at) => [`### Customer message ${played + at + 1} of ${total}`, quote(text)]),
+    );
+  }
   return `${blocks.join("\n\n")}\n`;
 }
 
@@ -92,7 +105,7 @@ export function buildPacket(sources: readonly Source[], seed: string, docs: { sc
   const files = new Map([
     ["scope.md", docs.scope],
     ["judging.md", docs.judging],
-    ...drawn.map(({ id, source }) => [`conversations/${id}.md`, renderConversation(id, source.conversation.turns)] as const),
+    ...drawn.map(({ id, source }) => [`conversations/${id}.md`, renderConversation(id, source.conversation.turns, source.unplayed)] as const),
     ["verdicts.jsonl", drawn.map(({ id }) => `${JSON.stringify(blankVerdict(id))}\n`).join("")],
   ]);
   const conversations = drawn.map(({ id, source }) => ({
@@ -104,8 +117,25 @@ export function buildPacket(sources: readonly Source[], seed: string, docs: { sc
   return { key: AuditKey.parse({ seed, conversations }), files };
 }
 
+// The saved trace stops at a handover, so what the customer still had to say comes from the case the run played.
+export function unplayedOf(conversation: Conversation, cases: readonly TestCase[]): string[] {
+  const name = `${conversation.split}/${conversation.case_id}`;
+  const testCase = cases.find((c) => c.id === conversation.case_id);
+  if (!testCase) throw new Error(`${name} is no longer a case, so the packet cannot show what its script still held`);
+  const played = conversation.turns.filter((turn) => turn.role === "customer").map((turn) => turn.text);
+  if (played.some((text, at) => text !== testCase.turns[at])) {
+    throw new Error(`the customer turns of ${name} have changed since the run, so the packet cannot show what its script still held`);
+  }
+  return testCase.turns.slice(played.length);
+}
+
 async function modelRuns(root: string): Promise<Source[]> {
   const sources: Source[] = [];
+  const casesOf = new Map<Split, Promise<TestCase[]>>();
+  const cases = (split: Split) => {
+    if (!casesOf.has(split)) casesOf.set(split, loadSplit(root, split).then((data) => data.cases));
+    return casesOf.get(split)!;
+  };
   for (const entry of await readLedger(root)) {
     if (!agents.get(entry.agent)?.liveModel) continue;
     const conversations = await readConversations(scoredRunDir(root, entry.run));
@@ -114,7 +144,15 @@ async function modelRuns(root: string): Promise<Source[]> {
         `${entry.run} holds ${conversations.length} conversations, but its ledger line scored ${entry.summary.cases}`,
       );
     }
-    sources.push(...conversations.map((conversation) => ({ agent: entry.agent, run: entry.run, conversation })));
+    const scripts = await cases(entry.summary.split);
+    sources.push(
+      ...conversations.map((conversation) => ({
+        agent: entry.agent,
+        run: entry.run,
+        conversation,
+        unplayed: unplayedOf(conversation, scripts),
+      })),
+    );
   }
   if (sources.length === 0) throw new Error("the ledger names no scored run of a model agent");
   return sources;
@@ -156,8 +194,10 @@ export async function writePacket(
   }
   await writeJson(key, AuditKey, packet.key);
   const runs = new Set(sources.map((source) => source.run)).size;
+  const cut = sources.filter((source) => source.unplayed.length > 0).length;
   return [
     `packet: ${packet.key.conversations.length} conversations from ${runs} runs in ${out}`,
+    `not reached: ${cut} conversations stopped at a handover before the script's last customer message`,
     `key: ${key}`,
     `seed: ${seed}`,
   ].join("\n");

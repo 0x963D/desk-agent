@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { inside, ignoredByGit } from "./packet.ts";
+import { inside, ignoredByGit, NOT_REACHED } from "./packet.ts";
 import { Criterion, ToolCall } from "./shapes.ts";
 
 // One conversation as a packet file shows it, read back from the Markdown that `renderConversation` writes.
@@ -9,7 +9,13 @@ export type ShownTurn =
   | { number: number; role: "customer"; text: string }
   | { number: number; role: "agent"; calls: ToolCall[]; reply: string };
 export type ShownHandover = { turn: number; reason: string; order: string | undefined; summary: string };
-export type ShownConversation = { id: string; turns: ShownTurn[]; handover: ShownHandover | undefined };
+export type ShownUnplayed = { message: number; of: number; text: string };
+export type ShownConversation = {
+  id: string;
+  turns: ShownTurn[];
+  handover: ShownHandover | undefined;
+  unplayed: ShownUnplayed[];
+};
 
 // A rubric criterion as the table in judging.md states it.
 export type CriterionTest = { name: Criterion; title: string; test: string };
@@ -76,8 +82,20 @@ export function parseConversation(text: string, file: string): ShownConversation
     take(/^Summary:$/, "Summary:");
     handover = { turn: Number(turn), reason: reason!, order, summary: quoted() };
   }
+  const unplayed: ShownUnplayed[] = [];
+  if (blocks[at] === "## Not reached") {
+    at++;
+    if (blocks[at] !== NOT_REACHED) fail("the note on messages not reached");
+    at++;
+    const heading = () => /^### Customer message (\d+) of (\d+)$/.exec(blocks[at] ?? "");
+    for (let head = heading(); head; head = heading()) {
+      at++;
+      unplayed.push({ message: Number(head[1]), of: Number(head[2]), text: quoted() });
+    }
+    if (unplayed.length === 0) fail("a customer message not reached");
+  }
   if (at !== blocks.length) fail("the end of the file");
-  return { id: id!, turns, handover };
+  return { id: id!, turns, handover, unplayed };
 }
 
 const section = (markdown: string, heading: string) =>
@@ -185,6 +203,15 @@ function renderHandover(handover: ShownHandover | undefined): string {
   ].join("");
 }
 
+function renderUnplayed(unplayed: readonly ShownUnplayed[]): string {
+  if (unplayed.length === 0) return "";
+  const messages = unplayed.map(
+    (m) =>
+      `<li class="turn customer"><p class="who">Customer message ${m.message} of ${m.of} · Not reached</p><div class="bubble">${escape(m.text)}</div></li>`,
+  );
+  return `<div class="unreached"><p class="label">Not reached</p><p>${escape(NOT_REACHED)}</p><ol class="chat">${messages.join("")}</ol></div>`;
+}
+
 function renderConversationForm(conversation: ShownConversation, at: number, count: number, criteria: readonly CriterionTest[]): string {
   const id = escape(conversation.id);
   const boxes = criteria
@@ -197,6 +224,7 @@ function renderConversationForm(conversation: ShownConversation, at: number, cou
 <header class="conversation-head"><h2 id="h-${id}" tabindex="-1">Conversation ${at + 1} of ${count}</h2><p class="state" aria-live="polite">To do</p></header>
 <ol class="chat">${conversation.turns.map(renderTurn).join("")}</ol>
 ${renderHandover(conversation.handover)}
+${renderUnplayed(conversation.unplayed)}
 <div class="judge">
 <fieldset class="acceptable"><legend>Is this conversation acceptable?</legend>
 <label class="choice"><input type="radio" name="acceptable-${id}" value="yes"> Acceptable</label>
