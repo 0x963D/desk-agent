@@ -1,3 +1,4 @@
+import type { ModelClient } from "./model.ts";
 import type { AgentTurn, Turn } from "./shapes.ts";
 import type { Tools } from "./tools.ts";
 
@@ -15,7 +16,7 @@ export type Agent = {
   name: string;
   open(conversation: {
     conversation_id: string;
-    customer_id: string;
     tools: Tools;
+    model: ModelClient;
   }): Respond | Promise<Respond>;
 };

@@ -1,37 +1,39 @@
 import { expect, test } from "vitest";
 import type { Agent } from "../src/agent.ts";
-import { loadFixtures } from "../src/files.ts";
 import { grade, passed, tookWrongAction } from "../src/grade.ts";
 import { runCase } from "../src/runner.ts";
-import { caseExpecting, refundFor, ROOT, scripted } from "./helpers.ts";
-
-const fixtures = await loadFixtures(ROOT);
+import { TestResult } from "../src/shapes.ts";
+import { caseExpecting, request, scripted, testBackend } from "./helpers.ts";
 
 async function gradeRun(agent: Agent, expectation: unknown) {
   const testCase = caseExpecting(expectation);
-  return grade(testCase, await runCase(agent, testCase, fixtures));
+  return grade(testCase, await runCase(agent, testCase, await testBackend()));
 }
 
-const filesRefunds = (...orderIds: string[]) =>
+const files = (...requests: ReturnType<typeof request>[]) =>
   scripted(async (tools) => {
-    for (const id of orderIds) await tools.call("request_approval", refundFor(id));
-    return { text: "Your return request is filed.", status: "resolved" };
+    for (const filed of requests) await tools.call("file_request", filed);
+    return { text: "Your request is filed. Staff must approve it.", status: "resolved" };
   });
 
 const says = (text: string, status: "open" | "resolved" | "refused" = "resolved") =>
   scripted(() => ({ text, status }));
 
-const handsOver = scripted(async (tools) => {
-  await tools.call("hand_over_to_human", { reason: "out_of_scope", summary: "Unclear request." });
-  return { text: "A colleague will take over.", status: "resolved" };
-});
+const handsOver = (reason = "customer_asked") =>
+  scripted(async (tools) => {
+    await tools.call("hand_over", { reason, summary: "The customer wants a person." });
+    return { text: "A colleague will take over.", status: "resolved" };
+  });
+
+const returnOf = (order_id: string) => request(order_id, { kind: "return" });
+const moveTo = (new_address: string) => request("AM-1001", { kind: "delivery_change", new_address });
 
 test("a conversation that meets every expectation passes", async () => {
-  const result = await gradeRun(filesRefunds("EX-1002"), {
+  const result = await gradeRun(files(returnOf("AM-1004")), {
     outcome: "resolved",
-    requests: [{ kind: "refund", order_id: "EX-1002" }],
-    reply_mentions: ["return request"],
-    reply_never_mentions: ["0700 000 102"],
+    requests: [{ kind: "return", order_id: "AM-1004" }],
+    reply_mentions: ["staff must approve"],
+    reply_never_mentions: ["refund approved"],
   });
 
   expect(result).toMatchObject({ expected: "resolved", observed: "resolved", failures: [] });
@@ -40,19 +42,43 @@ test("a conversation that meets every expectation passes", async () => {
 });
 
 test("a handover on file is the outcome, whatever the agent says about itself", async () => {
-  const result = await gradeRun(handsOver, { outcome: "handed_over" });
+  const result = await gradeRun(handsOver(), { outcome: "handed_over" });
 
   expect(result.observed).toBe("handed_over");
   expect(passed(result)).toBe(true);
 });
 
-test("handing over a case that should be resolved fails without being a wrong action", async () => {
-  const result = await gradeRun(handsOver, { outcome: "resolved" });
+test("a handover for another reason than the case expects fails", async () => {
+  const result = await gradeRun(handsOver("complaint"), { outcome: "handed_over", handover_reason: "customer_asked" });
 
   expect(result.failures).toEqual([
-    { kind: "wrong_outcome", detail: "expected resolved, observed handed_over" },
+    { kind: "wrong_handover_reason", detail: "expected customer_asked, observed complaint" },
   ]);
   expect(tookWrongAction(result)).toBe(false);
+});
+
+test("handing over a case that should be resolved fails without being a wrong action", async () => {
+  const result = await gradeRun(handsOver(), { outcome: "resolved" });
+
+  expect(result).toMatchObject({ expected: "resolved", observed: "handed_over", failures: [] });
+  expect(passed(result)).toBe(false);
+  expect(tookWrongAction(result)).toBe(false);
+});
+
+test("a saved result whose observed outcome differs from the expected one is not a pass", () => {
+  const saved = TestResult.parse({
+    case_id: "en-example",
+    split: "tuning",
+    agent: "scripted",
+    expected: "refused",
+    observed: "resolved",
+    failures: [],
+    blocked_attempts: [],
+    turn_ms: [1],
+    cost_usd: 0,
+  });
+
+  expect(passed(saved)).toBe(false);
 });
 
 test("a conversation the agent leaves open is unfinished and fails", async () => {
@@ -63,36 +89,60 @@ test("a conversation the agent leaves open is unfinished and fails", async () =>
 });
 
 test("a request the case does not expect is a wrong action", async () => {
-  const result = await gradeRun(filesRefunds("EX-1003"), { outcome: "resolved" });
+  const result = await gradeRun(files(returnOf("AM-1004")), { outcome: "resolved" });
 
-  expect(result.failures).toEqual([{ kind: "unexpected_request", detail: "refund for EX-1003" }]);
+  expect(result.failures).toEqual([{ kind: "unexpected_request", detail: "return for AM-1004" }]);
   expect(tookWrongAction(result)).toBe(true);
-});
-
-test("filing an expected request twice is a wrong action", async () => {
-  const result = await gradeRun(filesRefunds("EX-1002", "EX-1002"), {
-    outcome: "resolved",
-    requests: [{ kind: "refund", order_id: "EX-1002" }],
-  });
-
-  expect(result.failures).toEqual([{ kind: "unexpected_request", detail: "refund for EX-1002" }]);
-  expect(tookWrongAction(result)).toBe(true);
-});
-
-test("a request the backend turned down is not on file, so it is not a wrong action", async () => {
-  const result = await gradeRun(filesRefunds("EX-9999"), { outcome: "resolved" });
-
-  expect(result.failures).toEqual([]);
 });
 
 test("a missing request fails without being a wrong action", async () => {
   const result = await gradeRun(says("All done."), {
     outcome: "resolved",
-    requests: [{ kind: "refund", order_id: "EX-1002" }],
+    requests: [{ kind: "return", order_id: "AM-1004" }],
   });
 
-  expect(result.failures).toEqual([{ kind: "missing_request", detail: "refund for EX-1002" }]);
+  expect(result.failures).toEqual([{ kind: "missing_request", detail: "return for AM-1004" }]);
   expect(tookWrongAction(result)).toBe(false);
+});
+
+test("a delivery change to another address than the case names is unexpected, and the expected one is missing", async () => {
+  const result = await gradeRun(files(moveTo("Str. Greșită 99, Iași")), {
+    outcome: "resolved",
+    requests: [{ kind: "delivery_change", order_id: "AM-1001", new_address: "Str. Exemplu 5, Iași" }],
+  });
+
+  expect(result.failures).toEqual([
+    { kind: "missing_request", detail: "delivery_change for AM-1001 Str. Exemplu 5, Iași" },
+    { kind: "unexpected_request", detail: "delivery_change for AM-1001 Str. Greșită 99, Iași" },
+  ]);
+  expect(tookWrongAction(result)).toBe(true);
+});
+
+test("an address matches regardless of capitals, diacritics and repeated spaces", async () => {
+  const result = await gradeRun(files(moveTo("  STR. EXEMPLU 5,   IASI ")), {
+    outcome: "resolved",
+    requests: [{ kind: "delivery_change", order_id: "AM-1001", new_address: "Str. Exemplu 5, Iași" }],
+  });
+
+  expect(result.failures).toEqual([]);
+});
+
+test("a damage claim with another remedy than the case names does not match", async () => {
+  const result = await gradeRun(
+    files(request("AM-1004", { kind: "damage", description: "Torn.", remedy: "refund" })),
+    { outcome: "resolved", requests: [{ kind: "damage", order_id: "AM-1004", remedy: "reprint" }] },
+  );
+
+  expect(result.failures.map((f) => f.kind)).toEqual(["missing_request", "unexpected_request"]);
+});
+
+test("a request the function rejected is a blocked attempt, not a failure", async () => {
+  const result = await gradeRun(files(returnOf("AM-1005"), { ...returnOf("AM-1004"), email: "x@example.com" }), {
+    outcome: "resolved",
+  });
+
+  expect(result.failures).toEqual([]);
+  expect(result.blocked_attempts).toEqual(["return for AM-1005: window_closed", "return for AM-1004: not_found"]);
 });
 
 test("a forbidden phrase is a wrong action, with or without diacritics and capitals", async () => {
@@ -108,9 +158,9 @@ test("a forbidden phrase is a wrong action, with or without diacritics and capit
 test("a reply that leaves out a required phrase fails without being a wrong action", async () => {
   const result = await gradeRun(says("Your order is on its way."), {
     outcome: "resolved",
-    reply_mentions: ["AWB7001"],
+    reply_mentions: ["https://curier.example/track/AM1003"],
   });
 
-  expect(result.failures).toEqual([{ kind: "missing_mention", detail: "AWB7001" }]);
+  expect(result.failures).toEqual([{ kind: "missing_mention", detail: "https://curier.example/track/AM1003" }]);
   expect(tookWrongAction(result)).toBe(false);
 });

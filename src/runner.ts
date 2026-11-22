@@ -1,29 +1,34 @@
+import { randomUUID } from "node:crypto";
 import type { Agent } from "./agent.ts";
-import { createBackend, type Fixtures } from "./backend.ts";
+import type { ModelClient } from "./model.ts";
 import type { Conversation, TestCase, ToolCall, ToolName, Turn } from "./shapes.ts";
 import type { Tools } from "./tools.ts";
+import { handoverOf } from "./trace.ts";
+
+const noModel: ModelClient = {
+  async complete() {
+    throw new Error("this run gives the agent no model");
+  },
+};
 
 export async function runCase(
   agent: Agent,
   testCase: TestCase,
-  fixtures: Fixtures,
-  now: () => number = () => performance.now(),
+  backend: Tools,
+  options: { model?: ModelClient; now?: () => number } = {},
 ): Promise<Conversation> {
-  const backend = createBackend(fixtures);
+  const { model = noModel, now = () => performance.now() } = options;
+  const conversation_id = randomUUID();
   const calls: ToolCall[] = [];
   const tools: Tools = {
     async call<K extends ToolName>(name: K, input: unknown) {
-      const output = await backend.tools.call(name, input);
+      const output = await backend.call(name, input);
       calls.push({ name, input, output });
       return output;
     },
   };
 
-  const respond = await agent.open({
-    conversation_id: testCase.id,
-    customer_id: testCase.customer_id,
-    tools,
-  });
+  const respond = await agent.open({ conversation_id, tools, model });
 
   const turns: Turn[] = [];
   for (const text of testCase.turns) {
@@ -39,8 +44,14 @@ export async function runCase(
       duration_ms: reply.usage?.duration_ms ?? elapsed,
       cost_usd: reply.usage?.cost_usd ?? 0,
     });
-    if (backend.state().handover) break;
+    if (handoverOf(turns)) break;
   }
 
-  return { case_id: testCase.id, agent: agent.name, turns, ...backend.state() };
+  return {
+    conversation_id,
+    case_id: testCase.id,
+    split: testCase.split,
+    agent: agent.name,
+    turns,
+  };
 }
