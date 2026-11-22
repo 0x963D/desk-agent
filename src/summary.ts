@@ -70,8 +70,13 @@ export function summarize(
   };
 }
 
+export const shareOf = (summary: Summary, n: number) =>
+  `${n}/${summary.cases} (${Math.round((100 * n) / summary.cases)}%)`;
+export const milliseconds = (ms: number) => `${ms.toFixed(2)} ms`;
+export const dollars = (usd: number) => `$${usd.toFixed(4)}`;
+
 export function formatSummary(summary: Summary): string {
-  const share = (n: number) => `${n}/${summary.cases} (${Math.round((100 * n) / summary.cases)}%)`;
+  const share = (n: number) => shareOf(summary, n);
   return [
     `${summary.split}: ${summary.cases} conversations`,
     `  passed every check     ${share(summary.passed)}`,
@@ -79,7 +84,7 @@ export function formatSummary(summary: Summary): string {
     `  handover rate          ${share(summary.handed_over)}`,
     `  wrong-action rate      ${share(summary.wrong_action)}`,
     `  blocked attempts       ${share(summary.blocked_attempt)}`,
-    `  agent turn time        nearest-rank median ${summary.turn_ms_p50.toFixed(2)} ms, p95 ${summary.turn_ms_p95.toFixed(2)} ms`,
-    `  cost per conversation  $${summary.cost_per_conversation_usd.toFixed(4)}`,
+    `  agent turn time        nearest-rank median ${milliseconds(summary.turn_ms_p50)}, p95 ${milliseconds(summary.turn_ms_p95)}`,
+    `  cost per conversation  ${dollars(summary.cost_per_conversation_usd)}`,
   ].join("\n");
 }

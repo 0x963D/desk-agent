@@ -8,15 +8,16 @@ import { agents, DEFAULT_AGENT } from "./agents/index.ts";
 import { createBackend } from "./backend.ts";
 import { caseDir, loadSplit, readConversations, writeJson } from "./files.ts";
 import { grade, passed } from "./grade.ts";
-import { appendLedger, gitState, hashCaseFiles, ledgerFile, readLedger } from "./ledger.ts";
+import { appendLedger, gitState, hashCaseFiles, ledgerFile, readLedger, type LedgerEntry } from "./ledger.ts";
 import { recordedModel, recordingPath, recordModel, type Recorder } from "./model.ts";
+import { reportTable, type ReportRow } from "./report.ts";
 import { runCase } from "./runner.ts";
 import { Conversation, TestResult, type Split, type TestCase } from "./shapes.ts";
 import { spendCap, spendFile, spendGuard } from "./spend.ts";
 import { formatSummary, Summary, summarize } from "./summary.ts";
 
 const USAGE =
-  "usage: tune [--agent <name>] [--record] | score [--agent <name>] [--record] | regrade <run directory>";
+  "usage: tune [--agent <name>] [--record] | score [--agent <name>] [--record] | regrade <run directory> | report [--markdown]";
 
 type Graded = { results: TestResult[]; summary: Summary };
 
@@ -92,6 +93,52 @@ async function save(dir: string, { results, summary }: Graded) {
   await writeJson(join(dir, "summary.json"), Summary, summary);
 }
 
+async function regradeScored(root: string, cases: TestCase[], entry: LedgerEntry): Promise<void> {
+  const dir = resolve(root, entry.run);
+  if (relative(join(root, "results"), dir).startsWith("..")) {
+    throw new Error(`the ledger line of ${entry.time} names ${entry.run}, which is not a run under results/`);
+  }
+  const conversations = await readConversations(dir);
+  if (conversations.length === 0) {
+    throw new Error(`${entry.run}, the latest scored run of ${entry.agent}, holds no saved conversations`);
+  }
+  let regraded: Summary;
+  try {
+    regraded = gradeAll("held-out", cases, conversations).summary;
+  } catch (error) {
+    const why = error instanceof Error ? error.message : String(error);
+    throw new Error(`${entry.run} cannot be graded again: ${why}`, { cause: error });
+  }
+  const fields = Object.keys(entry.summary) as (keyof Summary)[];
+  const differ = fields.filter((field) => regraded[field] !== entry.summary[field]);
+  if (differ.length === 0) return;
+  const cause =
+    entry.cases_sha256 === (await hashCaseFiles(root, "held-out"))
+      ? "The held-out cases are the ones it was scored on, so the grader, the summary or the saved conversations have changed."
+      : "The held-out cases have changed since it was scored, so the agent must be scored again before its numbers are reported.";
+  throw new Error(
+    `${entry.run} no longer agrees with its line in ${shown(root, ledgerFile(root))} of ${entry.time}: ${differ
+      .map((field) => `${field} grades to ${regraded[field]} but the ledger records ${entry.summary[field]}`)
+      .join("; ")}. ${cause}`,
+  );
+}
+
+async function scoreReport(root: string, markdown: boolean): Promise<string> {
+  const ledger = await readLedger(root);
+  if (ledger.length === 0) {
+    throw new Error(`no scoring run: ${shown(root, ledgerFile(root))} holds no line. pnpm score records one.`);
+  }
+  const { cases } = await casesOf(root, "held-out");
+  const rows: ReportRow[] = [];
+  for (const agent of new Set(ledger.map((entry) => entry.agent))) {
+    const lines = ledger.filter((entry) => entry.agent === agent);
+    const entry = lines.at(-1)!;
+    await regradeScored(root, cases, entry);
+    rows.push({ entry, scored: lines.length });
+  }
+  return reportTable(rows, { markdown });
+}
+
 async function scoredNote(root: string, dir: string): Promise<string | undefined> {
   const run = shown(root, dir);
   const entry = (await readLedger(root)).findLast((line) => line.run === run);
@@ -120,7 +167,7 @@ export async function main(args: string[], root: string = process.cwd()): Promis
   try {
     parsed = parseArgs({
       args,
-      options: { agent: { type: "string" }, record: { type: "boolean" } },
+      options: { agent: { type: "string" }, record: { type: "boolean" }, markdown: { type: "boolean" } },
       allowPositionals: true,
       strict: true,
     });
@@ -129,10 +176,11 @@ export async function main(args: string[], root: string = process.cwd()): Promis
   }
   const [command, ...rest] = parsed.positionals;
   const name = parsed.values.agent ?? DEFAULT_AGENT;
+  const bare = (count: number) => rest.length === count && parsed.values.agent === undefined && !parsed.values.record;
 
-  if (command === "regrade" && rest.length === 1 && parsed.values.agent === undefined && !parsed.values.record) {
-    return regrade(root, resolve(root, rest[0]!));
-  }
+  if (command === "report" && bare(0)) return scoreReport(root, parsed.values.markdown ?? false);
+  if (parsed.values.markdown !== undefined) throw new Error(USAGE);
+  if (command === "regrade" && bare(1)) return regrade(root, resolve(root, rest[0]!));
   if ((command !== "tune" && command !== "score") || rest.length > 0) throw new Error(USAGE);
   const agent = agents.get(name);
   if (!agent) throw new Error(`no agent named ${name}. Agents: ${[...agents.keys()].join(", ")}`);

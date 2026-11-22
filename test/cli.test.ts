@@ -171,6 +171,9 @@ test.each([
   [["score", "tuning"]],
   [["regrade"]],
   [["regrade", "traces/rule-based/run", "--record"]],
+  [["report", "--agent", "rule-based"]],
+  [["report", "results"]],
+  [["tune", "--markdown"]],
   [[]],
 ])(
   "%j is refused with the usage line",
@@ -216,5 +219,79 @@ test("an interrupted run cannot be regraded into numbers", async () => {
 
   await expect(main(["regrade", dir], root)).rejects.toThrow(
     "the run covers 3 of 4 tuning cases (missing: ro-retur-expirat)",
+  );
+});
+
+const scoredRepo = async () => {
+  const root = await testRepo();
+  const commit = commitAll(root);
+  await main(["score"], root);
+  return { root, commit: commit.slice(0, 7) };
+};
+
+const MARKDOWN_HEAD = [
+  "| agent | conversations | passed every check | resolved correctly | handover rate | wrong-action rate | blocked attempts | median turn | p95 turn | cost per conversation | commit | times scored |",
+  "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: |",
+];
+
+const tree = async (root: string) => {
+  const files = (await readdir(root, { recursive: true })).filter((file) => !file.startsWith(".git")).sort();
+  return Promise.all(files.map(async (file) => [file, await readFile(join(root, file)).catch(() => "dir")] as const));
+};
+
+test("report prints one row per agent from its latest scored run, and writes nothing", async () => {
+  const { root, commit } = await scoredRepo();
+  const [entry] = await ledger(root);
+  const turns = [entry?.summary.turn_ms_p50, entry?.summary.turn_ms_p95].map((ms) => `${ms?.toFixed(2)} ms`);
+  const cells = ["rule-based", "2", "2/2 (100%)", "2/2 (100%)", "0/2 (0%)", "0/2 (0%)", "0/2 (0%)", ...turns];
+  const row = [...cells, "$0.0000", commit, "1"];
+  const before = await tree(root);
+
+  const markdown = await main(["report", "--markdown"], root);
+  const plain = await main(["report"], root);
+
+  expect(markdown.split("\n").slice(0, 3)).toEqual([...MARKDOWN_HEAD, `| ${row.join(" | ")} |`]);
+  const [plainHead, plainRow] = plain.split("\n");
+  expect(plainHead?.split(/ {2,}/)).toEqual(MARKDOWN_HEAD[0]?.slice(2, -2).split(" | "));
+  expect(plainRow?.split(/ {2,}/)).toEqual(row);
+  expect(plain).toContain("Held-out set only.");
+  expect(await tree(root)).toEqual(before);
+});
+
+test("report counts every score of an agent and shows the latest one", async () => {
+  const { root, commit } = await scoredRepo();
+  await main(["score"], root);
+
+  const markdown = await main(["report", "--markdown"], root);
+
+  const rows = markdown.split("\n").filter((line) => line.startsWith("| rule-based |"));
+  expect(rows).toHaveLength(1);
+  expect(rows[0]?.endsWith(`| ${commit} (dirty) | 2 |`)).toBe(true);
+});
+
+test("report stops when a regraded run disagrees with its ledger line", async () => {
+  const { root } = await scoredRepo();
+  const file = join(root, "results", "ledger.jsonl");
+  const [entry] = await ledger(root);
+  await writeFile(file, `${JSON.stringify({ ...entry, summary: { ...entry?.summary, passed: 1 } })}\n`);
+
+  await expect(main(["report"], root)).rejects.toThrow(
+    /no longer agrees with its line in results\/ledger\.jsonl of .*: passed grades to 2 but the ledger records 1\. The held-out cases are the ones it was scored on/,
+  );
+});
+
+test("report says the cases changed when that is why a regraded run disagrees", async () => {
+  const { root } = await scoredRepo();
+  const caseFile = join(root, "cases", "held-out", "ro-unde-e-comanda.yaml");
+  await writeFile(caseFile, (await readFile(caseFile, "utf8")).replace("track/SC2002", "track/SC9999"));
+
+  await expect(main(["report"], root)).rejects.toThrow(
+    "passed grades to 1 but the ledger records 2; resolved_correctly grades to 1 but the ledger records 2. The held-out cases have changed since it was scored",
+  );
+});
+
+test("report on an empty ledger exits with a clear message", async () => {
+  await expect(main(["report"], await testRepo())).rejects.toThrow(
+    "no scoring run: results/ledger.jsonl holds no line. pnpm score records one.",
   );
 });
