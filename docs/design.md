@@ -243,7 +243,9 @@ Each run writes its own directory, named by its start time and a random suffix. 
 
 A summary needs one result for every case of its split. An interrupted run leaves its finished conversations on disk, and `regrade` on that directory refuses to print numbers and names the missing cases. The same refusal covers a case added after the run.
 
-`pnpm score` first reads the commit and whether the tree is dirty, and refuses to run outside a Git checkout. It hashes the held-out case files, runs, and appends one line to `results/ledger.jsonl`.
+`pnpm score` first reads the commit and whether the tree is dirty, and refuses to run outside a Git checkout. It hashes the held-out case files, runs, appends one line to `results/ledger.jsonl`, and only then saves `results.json` and `summary.json`. No saved score therefore exists without its line. A ledger write that fails leaves the conversations and no summary.
+
+`regrade` on a held-out run looks up the run's ledger line. When the held-out case files have changed since that line, or when no line records the run, the report says so in a sentence after the numbers.
 
 | Alternative | Verdict | Why |
 | --- | --- | --- |

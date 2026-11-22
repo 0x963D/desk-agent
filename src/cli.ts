@@ -8,7 +8,7 @@ import { agents, DEFAULT_AGENT } from "./agents/index.ts";
 import { createBackend } from "./backend.ts";
 import { caseDir, loadShop, loadSplit, readConversations, writeJson } from "./files.ts";
 import { grade, passed } from "./grade.ts";
-import { appendLedger, gitState, hashCaseFiles } from "./ledger.ts";
+import { appendLedger, gitState, hashCaseFiles, ledgerFile, readLedger } from "./ledger.ts";
 import { recordedModel, recordingPath, recordModel, type Recorder } from "./model.ts";
 import { runCase } from "./runner.ts";
 import { Conversation, TestResult, type Split, type TestCase } from "./shapes.ts";
@@ -79,10 +79,22 @@ async function run(root: string, agent: Agent, split: Split, parent: string, rec
     await writeJson(join(dir, "conversations", `${testCase.id}.json`), Conversation, conversation);
     conversations.push(conversation);
   }
-  const graded = gradeAll(split, cases, conversations);
-  await writeJson(join(dir, "results.json"), TestResult.array(), graded.results);
-  await writeJson(join(dir, "summary.json"), Summary, graded.summary);
-  return { dir, graded };
+  return { dir, graded: gradeAll(split, cases, conversations) };
+}
+
+async function save(dir: string, { results, summary }: Graded) {
+  await writeJson(join(dir, "results.json"), TestResult.array(), results);
+  await writeJson(join(dir, "summary.json"), Summary, summary);
+}
+
+async function scoredNote(root: string, dir: string): Promise<string | undefined> {
+  const run = shown(root, dir);
+  const entry = (await readLedger(root)).findLast((line) => line.run === run);
+  if (!entry) {
+    return `No line in ${shown(root, ledgerFile(root))} records this run, so it is not a scoring run.`;
+  }
+  if (entry.cases_sha256 === (await hashCaseFiles(root, "held-out"))) return undefined;
+  return `The held-out cases have changed since this run was scored at ${entry.time}. This report grades the saved conversations against the cases as they read now, so its numbers can differ from the score in the ledger.`;
 }
 
 async function regrade(root: string, dir: string): Promise<string> {
@@ -93,7 +105,9 @@ async function regrade(root: string, dir: string): Promise<string> {
     throw new Error(`${shown(root, dir)} must hold the conversations of one split`);
   }
   const { cases } = await casesOf(root, split);
-  return report(root, dir, gradeAll(split, cases, conversations));
+  const printed = report(root, dir, gradeAll(split, cases, conversations));
+  const note = split === "held-out" ? await scoredNote(root, dir) : undefined;
+  return note ? `${printed}\n\n${note}` : printed;
 }
 
 export async function main(args: string[], root: string = process.cwd()): Promise<string> {
@@ -127,6 +141,7 @@ export async function main(args: string[], root: string = process.cwd()): Promis
 
   if (command === "tune") {
     const { dir, graded } = await run(root, agent, "tuning", join(root, "traces"), record);
+    await save(dir, graded);
     return report(root, dir, graded);
   }
   const git = gitState(root);
@@ -140,6 +155,7 @@ export async function main(args: string[], root: string = process.cwd()): Promis
     cases_sha256,
     summary: graded.summary,
   });
+  await save(dir, graded);
   return report(root, dir, graded);
 }
 

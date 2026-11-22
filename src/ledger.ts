@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { z } from "zod";
-import { caseDir, filesIn } from "./files.ts";
+import { caseDir, filesIn, unlessMissing } from "./files.ts";
 import type { Split } from "./shapes.ts";
 import { Summary } from "./summary.ts";
 
@@ -38,6 +38,14 @@ export async function hashCaseFiles(root: string, split: Split): Promise<string>
     hash.update("\0");
   }
   return hash.digest("hex");
+}
+
+export async function readLedger(root: string): Promise<LedgerEntry[]> {
+  const text = await unlessMissing(readFile(ledgerFile(root), "utf8"), "");
+  return text
+    .split("\n")
+    .filter((line) => line.trim() !== "")
+    .map((line) => LedgerEntry.parse(JSON.parse(line)));
 }
 
 export async function appendLedger(root: string, entry: LedgerEntry): Promise<void> {

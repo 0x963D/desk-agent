@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { main } from "../src/cli.ts";
@@ -101,6 +101,35 @@ test("the ledger gains one line per score and notes a dirty tree and changed cas
   const [first, second] = await ledger(root);
   expect(second?.dirty).toBe(true);
   expect(second?.cases_sha256).not.toBe(first?.cases_sha256);
+});
+
+test("a score whose ledger line cannot be written saves no results and no summary", async () => {
+  const root = await testRepo();
+  commitAll(root);
+  const ledgerPath = join(root, "results", "ledger.jsonl");
+  await mkdir(ledgerPath, { recursive: true });
+
+  await expect(main(["score"], root)).rejects.toThrow();
+
+  const dir = await onlyRun(root, "results");
+  expect(await readdir(dir)).toEqual(["conversations"]);
+  await rm(ledgerPath, { recursive: true });
+  expect(await main(["regrade", dir], root)).toContain("No line in results/ledger.jsonl records this run");
+});
+
+test("regrading a scored run says so when the held-out cases have changed since its ledger line", async () => {
+  const root = await testRepo();
+  commitAll(root);
+  const printed = await main(["score"], root);
+  const dir = await onlyRun(root, "results");
+  expect(await main(["regrade", dir], root)).toBe(printed);
+  const caseFile = join(root, "cases", "held-out", "ro-unde-e-comanda.yaml");
+  await writeFile(caseFile, `${await readFile(caseFile, "utf8")}# edited\n`);
+
+  const reprinted = await main(["regrade", dir], root);
+
+  expect(reprinted).toContain("The held-out cases have changed since this run was scored");
+  expect(reprinted.startsWith(printed)).toBe(true);
 });
 
 test("score outside a Git checkout refuses before it runs", async () => {
