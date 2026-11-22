@@ -72,6 +72,6 @@ A packet is one folder of conversations to judge. It holds this page, the scope,
 | `outcome` to `reply` | `true` when the conversation meets the criterion, `false` when it fails it. |
 | `note` | One sentence. When a criterion fails, it names the turn, such as "turn 4". |
 
-Save the filled file as `results/audit/<reader>.jsonl`, where the file name names the reader. The file holds ids and judgements only, so it can be committed. The loader rejects a file that misses a conversation, names an id twice or names one the packet does not hold, leaves a field empty, marks a conversation acceptable while a criterion fails, or gives a failure a note that names no turn.
+Save the filled file as `results/audit/<set>/<reader>.jsonl`, where the folder names the scored set and the file name names the reader. The file holds ids and judgements only, so it can be committed. The loader rejects a file that misses a conversation, names an id twice or names one the packet does not hold, leaves a field empty, marks a conversation acceptable while a criterion fails, or gives a failure a note that names no turn.
 
-The key that maps each id to its agent, run and case stays with the person who built the packet until every reader has finished. `pnpm audit:agreement` reads the key and the verdict files.
+The key that maps each id to its agent, run and case stays with the person who built the packet until every reader has finished. It is then committed beside the verdicts as `results/audit/<set>/key.json`, so `pnpm audit:agreement` reproduces the comparison from the repository.
