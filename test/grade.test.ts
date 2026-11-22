@@ -164,3 +164,39 @@ test("a reply that leaves out a required phrase fails without being a wrong acti
   expect(result.failures).toEqual([{ kind: "missing_mention", detail: "https://curier.example/track/SC1003" }]);
   expect(tookWrongAction(result)).toBe(false);
 });
+
+test.each([
+  ["a longer order number", "Your order is SC-13290.", "SC-1329"],
+  ["a longer word", "We ship to Brașovia.", "Brașov"],
+  ["a number inside a larger one", "Returns are open for 140 days.", "14"],
+])("a phrase inside %s is not mentioned", async (_, text, phrase) => {
+  const result = await gradeRun(says(text), { outcome: "resolved", reply_mentions: [phrase] });
+  const forbidden = await gradeRun(says(text), { outcome: "resolved", reply_never_mentions: [phrase] });
+
+  expect(result.failures).toEqual([{ kind: "missing_mention", detail: phrase }]);
+  expect(forbidden.failures).toEqual([]);
+});
+
+test("a phrase between punctuation or at the edge of a reply is mentioned", async () => {
+  const result = await gradeRun(says("SC-1329, delivered to Brașov. Track it at https://curier.example/track/SC1329."), {
+    outcome: "resolved",
+    reply_mentions: ["SC-1329", "Brașov", "curier.example/track/SC1329"],
+  });
+
+  expect(result.failures).toEqual([]);
+});
+
+test("a phrase split across two replies is not mentioned", async () => {
+  const agent = scripted(
+    () => ({ text: "We take card", status: "open" }),
+    () => ({ text: "only on weekdays.", status: "resolved" }),
+  );
+  const testCase = caseExpecting(
+    { outcome: "resolved", reply_mentions: ["card only"], reply_never_mentions: ["card only"] },
+    { turns: ["Can I pay cash?", "Really?"] },
+  );
+
+  const result = grade(testCase, await runCase(agent, testCase, await testBackend()));
+
+  expect(result.failures).toEqual([{ kind: "missing_mention", detail: "card only" }]);
+});

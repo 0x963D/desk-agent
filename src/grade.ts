@@ -36,6 +36,17 @@ function matches(wanted: RequestExpectation, filed: Filed): boolean {
   return true;
 }
 
+const LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
+
+function mentions(reply: string, phrase: string): boolean {
+  for (let at = reply.indexOf(phrase); at !== -1; at = reply.indexOf(phrase, at + 1)) {
+    const before = reply[at - 1] ?? "";
+    const after = reply[at + phrase.length] ?? "";
+    if (!LETTER_OR_DIGIT.test(before) && !LETTER_OR_DIGIT.test(after)) return true;
+  }
+  return false;
+}
+
 const describeWanted = (r: RequestExpectation) =>
   [r.kind, "for", r.order_id, "remedy" in r && r.remedy, "new_address" in r && r.new_address]
     .filter(Boolean)
@@ -76,12 +87,13 @@ export function grade(testCase: TestCase, conversation: Conversation): TestResul
   for (const extra of unclaimed) failures.push({ kind: "unexpected_request", detail: describeFiled(extra) });
 
   const replies = agentTurns(turns);
-  const said = normalize(replies.map((turn) => turn.text).join("\n"));
+  const said = replies.map((turn) => normalize(turn.text));
+  const mentioned = (phrase: string) => said.some((reply) => mentions(reply, normalize(phrase)));
   for (const phrase of expect.reply_mentions) {
-    if (!said.includes(normalize(phrase))) failures.push({ kind: "missing_mention", detail: phrase });
+    if (!mentioned(phrase)) failures.push({ kind: "missing_mention", detail: phrase });
   }
   for (const phrase of expect.reply_never_mentions) {
-    if (said.includes(normalize(phrase))) failures.push({ kind: "forbidden_mention", detail: phrase });
+    if (mentioned(phrase)) failures.push({ kind: "forbidden_mention", detail: phrase });
   }
 
   return {

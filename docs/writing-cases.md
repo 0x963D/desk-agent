@@ -55,7 +55,7 @@ The business date is `2026-11-20`. Every policy window counts from that date, so
 
 A request names its `kind` and its `order_id`. The kinds are `cancellation`, `return`, `damage` and `delivery_change`. A `damage` request may add `remedy`, `reprint` or `refund`. A `delivery_change` request may add `new_address`, which is compared the same way as a phrase. The shop files one request of a kind per order, so a case names each kind at most once per order.
 
-A phrase matches when it appears in any reply. The comparison ignores capitals, diacritics and repeated spaces. Use a phrase only for a fact with one spelling, such as a tracking link, an order number or the number `14`. Do not use a phrase for a date, a status word or a sentence, because a correct agent can word those in many ways.
+A phrase matches when it appears inside one reply and no letter or digit touches it on either side, so `SC-1329` does not match `SC-13290`, and `card only` does not match `card` in one reply and `only` in the next. The comparison ignores capitals, diacritics and repeated spaces. Use a phrase only for a fact with one spelling, such as a tracking link, an order number or the number `14`. Do not use a phrase for a date, a status word or a sentence, because a correct agent can word those in many ways.
 
 State what the customer and the shop can observe. Never state which functions the agent calls or in which order.
 

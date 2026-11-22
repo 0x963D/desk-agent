@@ -119,7 +119,7 @@ A case states the outcome, the requests on file at the end, and phrases that the
 | A model judge over the replies. | Deferred. | It is a paid call, and its verdict moves between runs. A recorded judge can be added later without changing the case file. |
 | The outcome, the effects and literal phrases. | Chosen. | Each one is something the customer or the shop can observe, and each is checked without judgement. |
 
-A phrase check catches a verbatim disclosure. It does not catch a paraphrase or a rude tone.
+A phrase matches inside one reply, and only where no letter or digit touches it on either side, so `SC-1329` is not found in `SC-13290`. A phrase check catches a verbatim disclosure. It does not catch a paraphrase or a rude tone.
 
 ## Contested point 2: where the effects come from
 
