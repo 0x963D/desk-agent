@@ -106,7 +106,13 @@ const FilledText = z.string().trim().min(1, "must hold text, not only spaces");
 export const Change = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("cancellation") }),
   z.object({ kind: z.literal("return") }),
-  z.object({ kind: z.literal("damage"), description: FilledText, remedy: Remedy }),
+  z.object({
+    kind: z.literal("damage"),
+    description: FilledText,
+    remedy: Remedy.optional().describe(
+      "Only when the customer said which they want, a reprint or a refund. Leave it out otherwise, because staff decide after a photo.",
+    ),
+  }),
   z.object({ kind: z.literal("delivery_change"), new_address: FilledText }),
 ]);
 export type Change = z.infer<typeof Change>;

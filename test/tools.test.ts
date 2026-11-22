@@ -119,6 +119,8 @@ test.each([
   ["a return inside the window", "SC-1004", { kind: "return" }],
   ["a damage claim inside the window", "SC-1004", { kind: "damage", description: "Torn corner.", remedy: "refund" }],
   ["a reprint of a print above 1,000 lei", "SC-1007", { kind: "damage", description: "Smudged.", remedy: "reprint" }],
+  ["a damage claim with no remedy chosen", "SC-1004", { kind: "damage", description: "Torn corner." }],
+  ["a damage claim with no remedy chosen on a print above 1,000 lei", "SC-1007", { kind: "damage", description: "Smudged." }],
 ])("%s is filed for staff approval", async (_, order_id, change) => {
   const tools = await testBackend();
 

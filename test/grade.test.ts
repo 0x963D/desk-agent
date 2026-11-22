@@ -136,6 +136,19 @@ test("a damage claim with another remedy than the case names does not match", as
   expect(result.failures.map((f) => f.kind)).toEqual(["missing_request", "unexpected_request"]);
 });
 
+test("a damage claim filed with no remedy matches a case that names none, and not one that names a remedy", async () => {
+  const claim = files(request("SC-1004", { kind: "damage", description: "Torn." }));
+
+  const open = await gradeRun(claim, { outcome: "resolved", requests: [{ kind: "damage", order_id: "SC-1004" }] });
+  const named = await gradeRun(claim, { outcome: "resolved", requests: [{ kind: "damage", order_id: "SC-1004", remedy: "reprint" }] });
+
+  expect(open.failures).toEqual([]);
+  expect(named.failures).toEqual([
+    { kind: "missing_request", detail: "damage for SC-1004 reprint" },
+    { kind: "unexpected_request", detail: "damage for SC-1004" },
+  ]);
+});
+
 test("a request the function rejected is a blocked attempt, not a failure", async () => {
   const result = await gradeRun(files(returnOf("SC-1005"), { ...returnOf("SC-1004"), email: "x@example.com" }), {
     outcome: "resolved",

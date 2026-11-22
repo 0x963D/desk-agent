@@ -37,8 +37,8 @@ The functions enforce the rules, not the prompt. A request that breaks the polic
 | Delivery change | Possible until the order ships. Staff must approve it. |
 | Cancellation | Possible while the order is paid and production has not started. Staff must approve the refund. |
 | Return | Within 14 days of delivery, for open and limited prints. The customer pays the return postage. Staff must approve the refund. |
-| Damage or misprint | Report within 14 days of delivery. The customer gets a reprint or a refund. Staff ask for a photo and approve. |
-| Large refund | A person decides any refund above 1,000 lei. The agent hands over. |
+| Damage or misprint | Report within 14 days of delivery. The customer gets a reprint or a refund. Staff ask for a photo and approve. The customer may say which one they want, and staff decide when the customer has not. |
+| Large refund | A person decides any refund above 1,000 lei. The agent hands over. A damage claim counts as a refund only when the customer asks for one. |
 | Commissioned work | Not returnable. |
 | Limited drops | No restock and no reservations. |
 | Commissions and tattoo bookings | The agent gives no price and no date. It collects the idea, the size, the placement and the availability, then hands over to the artist. |

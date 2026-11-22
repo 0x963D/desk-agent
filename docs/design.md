@@ -87,7 +87,7 @@ Data fields use `snake_case` everywhere, in case files, traces, function inputs 
 | `file_request` | `order_id`, `email`, `change` | A request id with the status `pending_approval`. |
 | `hand_over` | `reason`, `summary`, optional `order_id` | A handover id. |
 
-A new address, a damage description and a handover summary must hold more than spaces, or the function answers `invalid_input`. A customer is verified when a function receives an order number and the email on that order. The comparison ignores capitals and surrounding spaces. An unknown order and a wrong email return the same `not_found` error, so the answer reveals nothing about which one was wrong.
+A damage claim names `remedy` only when the customer chose a reprint or a refund. The field is optional, because the scope lets staff decide after a photo, and a required field made the agent ask a question that the customer had no reason to answer. A new address, a damage description and a handover summary must hold more than spaces, or the function answers `invalid_input`. A customer is verified when a function receives an order number and the email on that order. The comparison ignores capitals and surrounding spaces. An unknown order and a wrong email return the same `not_found` error, so the answer reveals nothing about which one was wrong.
 
 Errors are values: `{ ok: false, error: { code, message } }`. The message is written for a model to read and act on. The four codes are `invalid_input`, `not_found`, `policy_denied` and `unavailable`. A `policy_denied` error also carries one reason from a closed list.
 
@@ -441,7 +441,7 @@ Steps 3, 6 and 8 each reworded the complaint line, and each one moved a failure 
 
 Step 12 raised the mean from 17.0 to 18.7 cases on Luna and from 15.0 to 18.3 on Sol, graded as before, beyond the spread of one case or less in the runs before it. Step 13's pass count, mean 18.5 against 18.0, is inside the spread. The language failures it removed are the number it targeted: they were 5 of Luna's 6 failing cases in step 12's six runs, and none remain. The rule for keeping it was written before its runs: no run below 17, at most 3 failing cases over six runs, and at most 1 wrong-language case. Luna's two remaining failures come to half a case per run, below the spread, so the tuning stopped there.
 
-**The frozen agent** is the step 13 prompt at effort `low`. These are its runs, the last of each committed.
+**The frozen agent** is the step 13 prompt at effort `low`. These are its runs. The last run of each agent is committed. It was recorded after the damage claim's `remedy` became optional, a change to the function definitions that the old recordings could not replay, with the prompt unchanged.
 
 | Agent | Run | Passed | Resolved correctly | Handed over | Wrong actions | Blocked attempts | Median turn | 95th percentile | Cost per conversation |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -450,14 +450,16 @@ Step 12 raised the mean from 17.0 to 18.7 cases on Luna and from 15.0 to 18.3 on
 | `plain-gpt-6-luna` | 3 | 19/19 | 9/19 | 4/19 | 0 | 1 | 2,427 ms | 4,375 ms | $0.0002 |
 | `plain-gpt-6-luna` | 4 | 19/19 | 9/19 | 4/19 | 0 | 0 | 2,304 ms | 4,698 ms | $0.0002 |
 | `plain-gpt-6-luna` | 5 | 18/19 | 9/19 | 5/19 | 0 | 1 | 2,387 ms | 4,305 ms | $0.0002 |
-| `plain-gpt-6-luna` | 6, committed | 18/19 | 9/19 | 5/19 | 0 | 1 | 2,306 ms | 4,877 ms | $0.0002 |
+| `plain-gpt-6-luna` | 6 | 18/19 | 9/19 | 5/19 | 0 | 1 | 2,306 ms | 4,877 ms | $0.0002 |
+| `plain-gpt-6-luna` | 7, optional remedy, committed | 19/19 | 9/19 | 4/19 | 0 | 0 | 2,449 ms | 4,782 ms | $0.0003 |
 | `plain-gpt-6.2-sol` | 1 | 19/19 | 9/19 | 4/19 | 0 | 0 | 2,347 ms | 5,526 ms | $0.0152 |
 | `plain-gpt-6.2-sol` | 2 | 19/19 | 9/19 | 4/19 | 0 | 0 | 2,275 ms | 5,869 ms | $0.0155 |
-| `plain-gpt-6.2-sol` | 3, committed | 19/19 | 9/19 | 4/19 | 0 | 1 | 2,210 ms | 5,751 ms | $0.0155 |
+| `plain-gpt-6.2-sol` | 3 | 19/19 | 9/19 | 4/19 | 0 | 1 | 2,210 ms | 5,751 ms | $0.0155 |
+| `plain-gpt-6.2-sol` | 4, optional remedy, committed | 19/19 | 9/19 | 4/19 | 0 | 1 | 2,289 ms | 5,470 ms | $0.0167 |
 
 Before step 12 the same table read, per run, Luna 14, 15 and 15 passed, 7 of 19 resolved correctly, 6 handed over, no wrong action, no blocked attempt, a median turn of 2,370 to 2,502 ms, a 95th percentile of 5,154 to 6,755 ms and $0.0002 a conversation. Sol read 15 passed, 8 resolved correctly, 8 handed over, no wrong action, 0 to 2 blocked attempts, 2,746 to 3,045 ms, 5,369 to 8,365 ms and $0.0137. Ten of the 19 cases expect a refusal or a handover, so 9 of 19 resolved correctly is every case that can be.
 
-Turn times are nearest-rank, from model time only. The committed run of each agent is its last run, kept without choosing it for its score, and `pnpm replay` prints its row offline. The rule-based agent still passes 10 of 19 with the language check. Its fixed replies take the language of all the customer messages together, and in both cases that switch language it hands over in its first reply, before the switch. The first tuning, 41 live runs, spent $0.96 by the recorder's count. Steps 12 and 13, 24 live runs, 15 of them on Luna, spent $2.62: $0.07 on Luna and $2.55 on Sol.
+Turn times are nearest-rank, from model time only. The committed run of each agent is its last run, kept without choosing it for its score, and `pnpm replay` prints its row offline. The rule-based agent still passes 10 of 19 with the language check. Its fixed replies take the language of all the customer messages together, and in both cases that switch language it hands over in its first reply, before the switch. The first tuning, 41 live runs, spent $0.96 by the recorder's count. Steps 12 and 13, 24 live runs, 15 of them on Luna, spent $2.62: $0.07 on Luna and $2.55 on Sol. The two runs with the optional remedy spent $0.32: $0.005 on Luna and $0.317 on Sol. One run each shows that the change broke neither agent on the tuning set. It cannot show a change of one case, which is inside the spread.
 
 **What limits the number** on Luna is a handover the customer did not ask for, half a case per run. After a refusal Luna offers a colleague and then hands over on the customer's next message, or it hands over a request it has just filed because staff must approve it. [FAILURES.md](../FAILURES.md) traces both. Sol passed every case in three runs, so the tuning set no longer separates the two models. Sol costs about 65 times as much per conversation for at most one case more per run.
 
@@ -498,7 +500,9 @@ The scored traces under `traces/` and `results/` and the recordings under `recor
 
 ## Limits
 
-- `check_policy` decides a `damage` topic for a reprint. A damage refund above the limit is rejected only by `file_request`.
+- `check_policy` decides a `damage` topic as a claim that asks for no refund. A damage refund above the limit is rejected only by `file_request`.
+- The prompt still tells the agent to ask for a remedy before it files a damage claim. The optional field changes what the function accepts, and a change to what the agent does is tuning.
+- A case that leaves `remedy` out matches a damage claim with any remedy, so the grader does not catch a remedy the customer never chose. The rubric's `requests` criterion does.
 - A return covers the whole order. An order that holds any commissioned item cannot be returned, even for its catalogue prints.
 - The refund of a cancellation, a return or a damage refund is the order total. The return postage that the customer pays is not deducted.
 - A duplicate is a second request of the same kind for the same order. A rejected request does not count.
