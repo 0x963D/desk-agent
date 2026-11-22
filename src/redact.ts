@@ -34,19 +34,20 @@ const COMPOUND = new RegExp(
   "giu",
 );
 
-// Digits with at most two spaces, dots, hyphens or brackets between each, and an optional `+`.
-// A run never starts after a hyphen, so the digits of `SC-1003` are never part of one.
-const DIGIT_RUN = new RegExp(String.raw`(?<![\p{L}\p{N}_-])\+?\(?\d(?:[ .()-]{0,2}\d)*\)?${END}`, "gu");
-const ISO_DATE = /\d{4}-\d{2}-\d{2}/;
+// An order number and an ISO date are matched first and kept whole, so no run of digits can take
+// one in. Any other run is digits with at most two spaces, dots, hyphens or brackets between each,
+// and an optional `+`. Only a digit ends a run, so a letter that touches a card number hides nothing.
+const KEPT = String.raw`SC-\d{4}(?!\d)|\d{4}-\d{2}-\d{2}(?!\d)`;
+const NUMBERS = new RegExp(String.raw`${KEPT}|\+?\(?(?<!\d)\d(?:[ .()-]{0,2}\d)*\)?(?!\d)`, "gu");
+const WHOLLY_KEPT = new RegExp(String.raw`^(?:${KEPT})$`);
 
-// 13 to 19 digits is a card number, and 9 to 15 a phone number. A run that holds a date stays,
-// and so does anything shorter, such as a price or a house number.
+// A run of nine digits or more is masked: 13 to 19 as a card number, otherwise as a phone number.
+// A shorter run stays, such as a price, a house number or a size.
 function maskDigits(run: string): string {
-  if (ISO_DATE.test(run)) return run;
+  if (WHOLLY_KEPT.test(run)) return run;
   const digits = run.replace(/\D/g, "").length;
-  if (digits >= 13 && digits <= 19 && !/^(?:\+|00)/.test(run)) return "[card]";
-  if (digits >= 9 && digits <= 15) return "[phone]";
-  return run;
+  if (digits < 9) return run;
+  return digits >= 13 && digits <= 19 && !/^(?:\+|00)/.test(run) ? "[card]" : "[phone]";
 }
 
 export function redact(text: string): string {
@@ -56,7 +57,7 @@ export function redact(text: string): string {
     .replace(STREET_FIRST, "[address]")
     .replace(NUMBER_FIRST, "[address]")
     .replace(COMPOUND, "[address]")
-    .replace(DIGIT_RUN, maskDigits);
+    .replace(NUMBERS, maskDigits);
 }
 
 // A copy of the value with every string in it passed through `redact`. The value is not changed.
