@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import { writeJson } from "./files.ts";
 import type { Split } from "./shapes.ts";
+import { snapshot } from "./snapshot.ts";
 import type { SpendGuard } from "./spend.ts";
 
 export const ModelCall = z.strictObject({
@@ -22,8 +23,6 @@ export type LiveModel = {
 };
 
 export type Recorder = ModelClient & { save(): Promise<void> };
-
-const snapshot = (value: unknown): unknown => (value === undefined ? undefined : JSON.parse(JSON.stringify(value)));
 
 export function recordModel(live: LiveModel, file: string, guard: SpendGuard): Recorder {
   const calls: ModelCall[] = [];

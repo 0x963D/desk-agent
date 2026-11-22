@@ -3,6 +3,7 @@ import type { Agent } from "./agent.ts";
 import { connectInMemory } from "./mcp.ts";
 import type { ModelClient } from "./model.ts";
 import type { Conversation, TestCase, ToolCall, ToolName, Turn } from "./shapes.ts";
+import { snapshot } from "./snapshot.ts";
 import type { Tools } from "./tools.ts";
 import { handoverOf } from "./trace.ts";
 
@@ -24,8 +25,9 @@ export async function runCase(
   const calls: ToolCall[] = [];
   const tools: Tools = {
     async call<K extends ToolName>(name: K, input: unknown) {
-      const output = await shop.tools.call(name, input);
-      calls.push({ name, input, output });
+      const sent = snapshot(input);
+      const output = await shop.tools.call(name, sent);
+      calls.push({ name, input: sent, output: snapshot(output) });
       return output;
     },
   };
@@ -36,7 +38,7 @@ export async function runCase(
     for (const text of testCase.turns) {
       turns.push({ role: "customer", text });
       const started = now();
-      const reply = await respond(turns);
+      const reply = await respond(snapshot(turns));
       const elapsed = now() - started;
       turns.push({
         role: "agent",

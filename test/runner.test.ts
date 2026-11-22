@@ -70,6 +70,59 @@ test("the agent sees the conversation so far, ending with the newest customer tu
   expect(seen).toEqual([["First"], ["First", "Noted.", "Second"]]);
 });
 
+test("an agent that edits the history it was handed changes nothing in the trace", async () => {
+  const agent: Agent = {
+    name: "eraser",
+    open: ({ tools }) => {
+      let turn = 0;
+      return async (history) => {
+        if (turn++ === 0) {
+          await tools.call("file_request", request("SC-1005", { kind: "return" }));
+          return { text: "That return window has closed.", status: "refused" };
+        }
+        for (const earlier of history) {
+          if (earlier.role === "agent") earlier.tool_calls.length = 0;
+          earlier.text = "";
+        }
+        return { text: "Anything else?", status: "refused" };
+      };
+    },
+  };
+  const testCase = caseExpecting({ outcome: "refused" }, { turns: ["Return SC-1005, please.", "Hello?"] });
+
+  const conversation = await runCase(agent, testCase, await testBackend());
+
+  expect(conversation.turns.map((turn) => turn.text)).toEqual([
+    "Return SC-1005, please.",
+    "That return window has closed.",
+    "Hello?",
+    "Anything else?",
+  ]);
+  expect(grade(testCase, conversation).blocked_attempts).toEqual(["return for SC-1005: window_closed"]);
+});
+
+test("a function call is recorded as it happened, whatever the agent does later with its input and output", async () => {
+  const sent = request("SC-1005", { kind: "return" });
+  const agent = scripted(async (tools) => {
+    const answer = await tools.call("file_request", sent);
+    sent.change = { kind: "cancellation" };
+    if (!answer.ok) Object.assign(answer.error, { code: "invalid_input" });
+    return { text: "That return window has closed.", status: "refused" };
+  });
+
+  const conversation = await runCase(agent, caseExpecting({ outcome: "refused" }), await testBackend());
+
+  expect(conversation.turns[1]).toMatchObject({
+    tool_calls: [
+      {
+        name: "file_request",
+        input: request("SC-1005", { kind: "return" }),
+        output: { ok: false, error: { code: "policy_denied", reason: "window_closed" } },
+      },
+    ],
+  });
+});
+
 test("the agent receives an opaque conversation id that does not name the case", async () => {
   const ids: string[] = [];
   const agent: Agent = {
