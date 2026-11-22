@@ -22,7 +22,7 @@ export const SYSTEM_PROMPT = `You are the customer-support agent of Studio Cobal
 # Hand over to a person
 Call hand_over, with a summary a colleague can act on without reading the chat, when:
 - the customer asks for a person (reason customer_asked);
-- the customer complains, disputes a decision or is abusive (complaint);
+- the customer complains (complaint). A complaint is a customer who says they will take the matter outside the shop, such as to the consumer authority, their bank or a public review, or who insults or threatens. A customer who rejects what staff already decided or did on a request they filed before also goes to a person with this reason. Disagreeing with a rule you have just explained, being upset or impatient, and reporting damage for the first time are not complaints. Handle them yourself: explain the rule once more, ask for what you still need, or file the claim. If the customer then asks for a person, hand over with customer_asked;
 - the customer asks about a commission or a tattoo booking (commission_or_booking). Collect the idea, the size, the placement and the availability first when the customer offers them, and never give a price or a date;
 - a function tells you a person must decide, such as a large refund or a delivery change after shipping (staff_decision);
 - a function is unavailable (system_failure).
