@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { cp, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -18,6 +19,16 @@ export async function testRepo(): Promise<string> {
   await cp(TEST_REPO, root, { recursive: true });
   await cp(join(ROOT, "fixtures", "shop.yaml"), join(root, "fixtures", "shop.yaml"));
   return root;
+}
+
+// Makes the test repository a Git checkout with one commit, as `pnpm score` needs, and returns the commit.
+export function commitAll(root: string) {
+  const git = (...args: string[]) =>
+    execFileSync("git", ["-c", "user.name=Test", "-c", "user.email=test@example.com", ...args], { cwd: root });
+  git("init", "-q");
+  git("add", "-A");
+  git("commit", "-q", "-m", "cases");
+  return git("rev-parse", "HEAD").toString().trim();
 }
 
 const REPO = await testRepo();

@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
@@ -6,7 +5,7 @@ import { main } from "../src/cli.ts";
 import { readJson } from "../src/files.ts";
 import { LedgerEntry } from "../src/ledger.ts";
 import { TestResult } from "../src/shapes.ts";
-import { testRepo } from "./helpers.ts";
+import { commitAll, testRepo } from "./helpers.ts";
 
 const runDirs = (root: string, base: string) => readdir(join(root, base, "rule-based"));
 
@@ -17,15 +16,6 @@ async function onlyRun(root: string, base: string): Promise<string> {
 }
 
 const results = (dir: string) => readJson(join(dir, "results.json"), TestResult.array());
-
-function commitAll(root: string) {
-  const git = (...args: string[]) =>
-    execFileSync("git", ["-c", "user.name=Test", "-c", "user.email=test@example.com", ...args], { cwd: root });
-  git("init", "-q");
-  git("add", "-A");
-  git("commit", "-q", "-m", "cases");
-  return git("rev-parse", "HEAD").toString().trim();
-}
 
 async function ledger(root: string): Promise<LedgerEntry[]> {
   const text = await readFile(join(root, "results", "ledger.jsonl"), "utf8");
@@ -175,6 +165,10 @@ test.each([
   [["report", "results"]],
   [["tune", "--markdown"]],
   [["replay", "--record"]],
+  [["report", "--runs", "--agent", "rule-based"]],
+  [["report", "--check-readme", "--markdown"]],
+  [["report", "--runs", "--check-readme"]],
+  [["tune", "--replay", "en-where-is-my-order"]],
   [[]],
 ])(
   "%j is refused with the usage line",
@@ -294,6 +288,99 @@ test("report says the cases changed when that is why a regraded run disagrees", 
 test("report on an empty ledger exits with a clear message", async () => {
   await expect(main(["report"], await testRepo())).rejects.toThrow(
     "no scoring run: results/ledger.jsonl holds no line. pnpm score records one.",
+  );
+});
+
+test("report --runs prints every ledger line, oldest first, from the ledger alone", async () => {
+  const { root, commit } = await scoredRepo();
+  await main(["score"], root);
+  const lines = await ledger(root);
+  await rm(join(root, "results", "rule-based"), { recursive: true });
+
+  const plain = await main(["report", "--runs"], root);
+  const markdown = await main(["report", "--runs", "--markdown"], root);
+
+  const row = (entry: LedgerEntry, dirty: string) => [
+    "rule-based",
+    entry.time.slice(0, 19).replace("T", " "),
+    commit,
+    dirty,
+    entry.cases_sha256.slice(0, 12),
+    "2",
+    "2",
+    "2",
+    "0",
+    "0",
+    "0",
+  ];
+  const [head, ...rest] = plain.split("\n");
+  expect(head?.split(/ {2,}/)).toEqual([
+    "agent",
+    "time (UTC)",
+    "commit",
+    "dirty",
+    "cases hash",
+    "conversations",
+    "passed",
+    "resolved correctly",
+    "handed over",
+    "wrong actions",
+    "blocked attempts",
+  ]);
+  expect(rest.slice(0, 2).map((line) => line.split(/ {2,}/))).toEqual([row(lines[0]!, "no"), row(lines[1]!, "yes")]);
+  expect(markdown.split("\n").slice(1, 4)).toEqual([
+    "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+    `| ${row(lines[0]!, "no").join(" | ")} |`,
+    `| ${row(lines[1]!, "yes").join(" | ")} |`,
+  ]);
+  await expect(main(["report"], root)).rejects.toThrow("holds no saved conversations");
+});
+
+const readme = (table: string) => `# Shop agent
+
+## Results
+
+<!-- report table: start -->
+${table}
+<!-- report table: end -->
+
+More prose.
+`;
+
+test("report --check-readme passes while the README shows the current report table", async () => {
+  const { root } = await scoredRepo();
+  await writeFile(join(root, "README.md"), readme(await main(["report", "--markdown"], root)));
+
+  await expect(main(["report", "--check-readme"], root)).resolves.toBe(
+    "README.md shows the current pnpm report --markdown table.",
+  );
+});
+
+test("report --check-readme fails when a number in the README differs from the report", async () => {
+  const { root } = await scoredRepo();
+  const table = await main(["report", "--markdown"], root);
+  await writeFile(join(root, "README.md"), readme(table.replace("| 2/2 (100%) |", "| 2/2 (99%) |")));
+
+  await expect(main(["report", "--check-readme"], root)).rejects.toThrow(
+    "Line 3 of the table reads \"| rule-based | 2 | 2/2 (99%) |",
+  );
+});
+
+test("report --check-readme fails once a new score makes the README table stale", async () => {
+  const { root } = await scoredRepo();
+  await writeFile(join(root, "README.md"), readme(await main(["report", "--markdown"], root)));
+
+  await main(["score"], root);
+
+  await expect(main(["report", "--check-readme"], root)).rejects.toThrow("is not the current pnpm report --markdown");
+});
+
+test("report --check-readme fails when the README has no marked table", async () => {
+  const { root } = await scoredRepo();
+  await writeFile(join(root, "README.md"), "# Shop agent\n\n| agent |\n");
+
+  await expect(main(["report", "--check-readme"], root)).rejects.toThrow(
+    "README.md holds no report table between the lines <!-- report table: start --> and <!-- report table: end -->",
   );
 });
 

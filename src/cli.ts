@@ -1,4 +1,4 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { parseArgs } from "node:util";
@@ -11,14 +11,14 @@ import { caseDir, filesIn, loadSplit, readConversations, runName, writeJson } fr
 import { grade, passed } from "./grade.ts";
 import { appendLedger, gitState, hashCaseFiles, ledgerFile, readLedger, type LedgerEntry } from "./ledger.ts";
 import { recordedModel, recordingDir, recordingPath, recordModel, type Recorder } from "./model.ts";
-import { reportTable, type ReportRow } from "./report.ts";
+import { README_END, README_START, readmeTable, reportTable, runsTable, type ReportRow } from "./report.ts";
 import { runCase } from "./runner.ts";
 import { Conversation, TestResult, type Split, type TestCase } from "./shapes.ts";
 import { spendCap, spendFile, spendGuard } from "./spend.ts";
 import { formatSummary, Summary, summarize } from "./summary.ts";
 
 const USAGE =
-  "usage: tune [--agent <name>] [--record] | score [--agent <name>] [--record] | regrade <run directory> | replay | report [--markdown] | chat [--agent <name>] [--replay <tuning case id>]";
+  "usage: tune [--agent <name>] [--record] | score [--agent <name>] [--record] | regrade <run directory> | replay | report [--markdown] | report --runs [--markdown] | report --check-readme | chat [--agent <name>] [--replay <tuning case id>]";
 
 // The terminal `pnpm chat` talks through. Standard input is opened only when a live chat reads it.
 export type Terminal = { lines(): AsyncIterable<string>; interactive: boolean; output: ChatOutput };
@@ -182,6 +182,31 @@ async function scoreReport(root: string, markdown: boolean): Promise<string> {
   return reportTable(rows, { markdown });
 }
 
+async function runsReport(root: string, markdown: boolean): Promise<string> {
+  const ledger = await readLedger(root);
+  if (ledger.length === 0) {
+    throw new Error(`no scoring run: ${shown(root, ledgerFile(root))} holds no line. pnpm score records one.`);
+  }
+  return runsTable(ledger, { markdown });
+}
+
+async function checkReadme(root: string): Promise<string> {
+  const file = join(root, "README.md");
+  const inReadme = readmeTable(await readFile(file, "utf8"));
+  if (inReadme === undefined) {
+    throw new Error(`README.md holds no report table between the lines ${README_START} and ${README_END}`);
+  }
+  const current = await scoreReport(root, true);
+  if (inReadme === current) return "README.md shows the current pnpm report --markdown table.";
+  const readmeLines = inReadme.split("\n");
+  const currentLines = current.split("\n");
+  let first = 0;
+  while (readmeLines[first] === currentLines[first]) first++;
+  throw new Error(
+    `the table in README.md is not the current pnpm report --markdown, so the README no longer shows the numbers the ledger and the saved runs give. Line ${first + 1} of the table reads ${JSON.stringify(readmeLines[first] ?? "")} where the report prints ${JSON.stringify(currentLines[first] ?? "")}. Put the output of pnpm report --markdown between the two marker lines.`,
+  );
+}
+
 async function scoredNote(root: string, dir: string): Promise<string | undefined> {
   const run = shown(root, dir);
   const entry = (await readLedger(root)).findLast((line) => line.run === run);
@@ -215,6 +240,8 @@ export async function main(args: string[], root: string = process.cwd(), termina
         record: { type: "boolean" },
         markdown: { type: "boolean" },
         replay: { type: "string" },
+        runs: { type: "boolean" },
+        "check-readme": { type: "boolean" },
       },
       allowPositionals: true,
       strict: true,
@@ -228,6 +255,8 @@ export async function main(args: string[], root: string = process.cwd(), termina
   const takes = (count: number, ...allowed: string[]) =>
     rest.length === count && Object.keys(values).every((option) => allowed.includes(option));
 
+  if (command === "report" && values["check-readme"] && takes(0, "check-readme")) return checkReadme(root);
+  if (command === "report" && values.runs && takes(0, "runs", "markdown")) return runsReport(root, values.markdown ?? false);
   if (command === "report" && takes(0, "markdown")) return scoreReport(root, values.markdown ?? false);
   if (command === "regrade" && takes(1)) return regrade(root, resolve(root, rest[0]!));
   if (command === "replay" && takes(0)) return replay(root);
