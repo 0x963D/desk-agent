@@ -185,6 +185,18 @@ export const Conversation = z.strictObject({
 });
 export type Conversation = z.infer<typeof Conversation>;
 
+// The log of one `pnpm chat` session, saved under traces/chat/. Every string in its turns has
+// passed through `redact`, so it holds no email, phone number, card number, IBAN or street.
+export const ChatLog = z.strictObject({
+  conversation_id: z.string(),
+  agent: z.string(),
+  orders: z.literal("tuning"),
+  replay_of: z.string().optional(),
+  started_at: z.iso.datetime(),
+  turns: z.array(Turn),
+});
+export type ChatLog = z.infer<typeof ChatLog>;
+
 export const RequestExpectation = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("cancellation"), order_id: OrderId }),
   z.strictObject({ kind: z.literal("return"), order_id: OrderId }),
