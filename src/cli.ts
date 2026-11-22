@@ -5,6 +5,7 @@ import { parseArgs } from "node:util";
 import type { Agent } from "./agent.ts";
 import { agents, DEFAULT_AGENT } from "./agents/index.ts";
 import { createBackend } from "./backend.ts";
+import { auditAgreement } from "./agreement.ts";
 import { envFile } from "./env.ts";
 import { caseDir, filesIn, loadSplit, readConversations, writeJson } from "./files.ts";
 import { grade, passed } from "./grade.ts";
@@ -18,14 +19,17 @@ import {
   type LedgerEntry,
 } from "./ledger.ts";
 import { recordedModel, recordingDir, recordingPath, recordModel, type Recorder } from "./model.ts";
+import { writePacket } from "./packet.ts";
 import { reportTable, type ReportRow } from "./report.ts";
 import { runCase } from "./runner.ts";
 import { Conversation, TestResult, type Split, type TestCase } from "./shapes.ts";
 import { spendCap, spendFile, spendGuard } from "./spend.ts";
 import { formatSummary, Summary, summarize } from "./summary.ts";
 
-const USAGE =
-  "usage: tune [--agent <name>] [--record] | score [--agent <name>] [--record] | regrade <run directory> | replay | report [--markdown]";
+const USAGE = [
+  "usage: tune [--agent <name>] [--record] | score [--agent <name>] [--record] | regrade <run directory> | replay | report [--markdown]",
+  "       | audit-packet --out <dir> --key <file> [--seed <text>] | audit-agreement --key <file> <verdict file>...",
+].join("\n");
 
 type Graded = { results: TestResult[]; summary: Summary };
 
@@ -192,7 +196,14 @@ export async function main(args: string[], root: string = process.cwd()): Promis
   try {
     parsed = parseArgs({
       args,
-      options: { agent: { type: "string" }, record: { type: "boolean" }, markdown: { type: "boolean" } },
+      options: {
+        agent: { type: "string" },
+        record: { type: "boolean" },
+        markdown: { type: "boolean" },
+        out: { type: "string" },
+        key: { type: "string" },
+        seed: { type: "string" },
+      },
       allowPositionals: true,
       strict: true,
     });
@@ -200,6 +211,15 @@ export async function main(args: string[], root: string = process.cwd()): Promis
     throw new Error(USAGE);
   }
   const [command, ...rest] = parsed.positionals;
+  const { out, key, seed, ...runOptions } = parsed.values;
+  const onlyAudit = Object.values(runOptions).every((value) => value === undefined);
+  if (command === "audit-packet" && out && key && rest.length === 0 && onlyAudit) {
+    return writePacket(root, { out: resolve(root, out), key: resolve(root, key), seed });
+  }
+  if (command === "audit-agreement" && key && rest.length > 0 && out === undefined && seed === undefined && onlyAudit) {
+    return auditAgreement(root, resolve(root, key), rest.map((file) => resolve(root, file)));
+  }
+  if (out !== undefined || key !== undefined || seed !== undefined) throw new Error(USAGE);
   const name = parsed.values.agent ?? DEFAULT_AGENT;
   const bare = (count: number) => rest.length === count && parsed.values.agent === undefined && !parsed.values.record;
 
