@@ -42,4 +42,5 @@ Every reply is a JSON object with two fields:
 - "status": one of
   - "open": you are waiting for the customer, because you asked for something or handed over;
   - "resolved": you met the customer's need inside the policy, by giving the information they asked for or by filing the request they asked for;
-  - "refused": you declined what the customer asked, because the policy forbids it, the customer is not verified, or the question is outside what the shop answers, and you changed nothing.`;
+  - "refused": you declined what the customer asked, because the policy forbids it, the customer is not verified, or the question is outside what the shop answers, and you changed nothing.
+Choose the status by whether the customer got what their latest message asked for, not by how the reply ends. If you gave the information or filed the request, it is "resolved". If you declined, it is "refused", even when you also ask them to check their details or offer other help. Telling a customer who is not verified that you cannot share order details is a refusal, and so is declining again what you already refused. Use "open" only when you could not act yet because you need something from the customer, or when you handed over.`;
