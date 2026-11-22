@@ -9,6 +9,10 @@ Nothing here calls a model or the network unless a command is given `--record`.
 	pnpm tune                    # run cases/tuning, write traces/<agent>/<run>/
 	pnpm score                   # run cases/held-out, write results/<agent>/<run>/, append results/ledger.jsonl
 	pnpm regrade <run directory> # grade a saved run again, without the agent
+	pnpm replay                  # run cases/tuning for every agent that can run offline
+	pnpm report                  # the latest held-out score of every agent, regraded from results/
+	pnpm report --markdown       # the same table as Markdown
+	docker compose run --rm check   # typecheck, test, replay and report in a container with no network
 	pnpm tune --agent rule-based # pick an agent from the registry
 	pnpm tune --agent plain-gpt-6-luna   # the model agent, replayed from recordings/
 	pnpm tune --record           # call the agent's live model and write recordings/<agent>/tuning/
@@ -18,7 +22,7 @@ Git ignores `traces/` and `.artifacts/`. A scoring run in `results/` and a recor
 
 ## Read the code in this order
 
-The source is about 1,750 lines in 21 files. `wc -l src/*.ts src/agents/*.ts` regenerates the count.
+The source is about 1,870 lines in 22 files. `wc -l src/*.ts src/agents/*.ts` regenerates the count.
 
 1. `src/shapes.ts` names every shape that crosses a file or a function boundary.
 2. `src/tools.ts` holds the five function contracts.
@@ -29,8 +33,8 @@ The source is about 1,750 lines in 21 files. `wc -l src/*.ts src/agents/*.ts` re
 7. `src/trace.ts` derives the effects and the outcome from a conversation.
 8. `src/grade.ts` compares a conversation with its case.
 9. `src/summary.ts` turns the results of one run into the numbers.
-10. `src/files.ts` reads and writes files and enforces the case contract. `src/ledger.ts` records a scoring run.
-11. `src/cli.ts` holds the three commands. `src/agents/` holds the registry, the rule-based baseline and the plain model agent: `prompt.ts` is the system prompt, `openai.ts` the live client and its prices, `plain.ts` the agent.
+10. `src/files.ts` reads and writes files and enforces the case contract. `src/ledger.ts` records a scoring run. `src/report.ts` lays out the report table.
+11. `src/cli.ts` holds the five commands. `src/agents/` holds the registry, the rule-based baseline and the plain model agent: `prompt.ts` is the system prompt, `openai.ts` the live client and its prices, `plain.ts` the agent.
 
 ## The shapes
 
@@ -262,6 +266,20 @@ A summary needs one result for every case of its split. An interrupted run leave
 `src/agents/index.ts` holds a registry keyed by agent name. `--agent <name>` picks one, and the default is `rule-based`. Adding an agent is one entry in its list. The registry is a `Map`, not a plain object, because a plain object answers inherited names: `tune --agent constructor` found `Object` and crashed inside the run. A name that is not in the map is refused before a run directory exists.
 
 `pnpm tune` and `pnpm score` take no split. Each command maps to one split, and the loader reads one folder. A case whose `split` differs from its folder fails the load, so a held-out case moved into `cases/tuning` cannot run as tuning.
+
+## The report and the one-command check
+
+`pnpm report` prints the numbers the README may quote. It reads `results/ledger.jsonl` and, for each agent in it, the run named by that agent's last line. It grades the saved conversations again with `grade` and `summarize`, the same code that scored them, and compares every field of the new summary with the summary on the ledger line. One differing field stops the report with the field, both values and the likely cause: the held-out cases changed since the score, or they did not and the grader or the saved conversations did. When every agent agrees, it prints one row per agent with the commit of the run, marked `(dirty)` when the tree was dirty, and the number of lines the agent has in the ledger, so a reader sees how often the held-out set was used. The rates, times and cost come from the formatters in `src/summary.ts` that the run summary uses. The report writes nothing and adds no ledger line.
+
+| Alternative | Verdict | Why |
+| --- | --- | --- |
+| Print the summary saved on the ledger line. | Rejected. | It trusts a copy. A grader change that moves a number would go unnoticed until the next score. |
+| Print the best run of each agent. | Rejected. | Picking the best of several held-out runs is tuning on the held-out set. |
+| Regrade the latest run and stop on any difference. | Chosen. | Every printed number is one the current code reproduces from committed files. |
+
+`pnpm replay` runs the tuning set for each agent in the registry. An agent with a live model client needs recordings, and one with no file under `recordings/<agent>/tuning/` is skipped with a sentence that says so. An agent with only some recordings stops on the first case without one, because a partial replay would print numbers over fewer cases.
+
+`docker compose run --rm check` builds the image in `Dockerfile` and runs `pnpm check`: the typecheck, the tests, the replay and the report. The build needs the network, to fetch the pinned `node:24.22.2-slim` image, Git, pnpm and the locked dependencies. The run does not: `compose.yaml` sets `network_mode: none`, so a test or a command that reached for a provider would fail the check. `pull_policy: build` builds again on every run, so the image never lags behind the checkout. `.dockerignore` leaves out `.git`, `.env` and the local run folders. The tests still need the `git` binary, because the score tests make throwaway repositories.
 
 ## The rule-based agent
 
