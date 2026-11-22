@@ -5,7 +5,6 @@ import { z } from "zod";
 import {
   Conversation,
   Email,
-  expectedRequests,
   Order,
   Shop,
   TestCase,
@@ -68,7 +67,7 @@ async function loadOrders(root: string, split: Split): Promise<Order[]> {
   for (const { order_id } of orders) {
     const number = Number(order_id.slice(3));
     if (number < low || number > high) {
-      throw new Error(`${file}: ${order_id} is outside the ${split} range AM-${low} to AM-${high}`);
+      throw new Error(`${file}: ${order_id} is outside the ${split} range SC-${low} to SC-${high}`);
     }
     if (seen.has(order_id)) throw new Error(`${file}: ${order_id} appears twice`);
     seen.add(order_id);
@@ -98,7 +97,7 @@ export async function loadSplit(root: string, split: Split): Promise<{ cases: Te
   ]);
   const known = new Set(orders.map((order) => order.order_id));
   cases.forEach((testCase, at) => {
-    for (const { order_id } of expectedRequests(testCase.expect)) {
+    for (const { order_id } of testCase.expect.requests) {
       if (!known.has(order_id)) {
         throw new Error(`${files[at]}: expects a request on ${order_id}, which ${orderFile(root, split)} does not hold`);
       }

@@ -24,7 +24,7 @@ export const Category = z.enum([
   "shop-question",
 ]);
 
-export const OrderId = z.string().regex(/^AM-\d{4}$/, "an order number is AM- and four digits");
+export const OrderId = z.string().regex(/^SC-\d{4}$/, "an order number is SC- and four digits");
 export const Email = z.string().regex(/^[^@\s]+@example\.com$/i, "every email is at example.com");
 const IsoDate = z.iso.date();
 
@@ -218,6 +218,7 @@ export const Expectation = z.discriminatedUnion("outcome", [
   }),
   z.strictObject({
     outcome: z.literal("refused"),
+    requests: z.array(RequestExpectation).max(0, "a refused case files nothing").default([]),
     reply_mentions: Phrases,
     reply_never_mentions: Phrases,
   }),
@@ -241,8 +242,6 @@ export const TestCase = z
   });
 export type TestCase = z.infer<typeof TestCase>;
 
-export const expectedRequests = (expect: Expectation): RequestExpectation[] =>
-  "requests" in expect ? expect.requests : [];
 
 export const Failure = z.strictObject({
   kind: z.enum([

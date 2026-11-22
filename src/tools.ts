@@ -9,7 +9,7 @@ import {
   type ToolName,
 } from "./shapes.ts";
 
-const order_id = z.string().min(1).describe("The order number, AM- and four digits, such as AM-1007.");
+const order_id = z.string().min(1).describe("The order number, SC- and four digits, such as SC-1007.");
 const email = z.string().min(1).describe("The email the order was placed with.");
 
 export const contracts = {

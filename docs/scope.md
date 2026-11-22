@@ -4,7 +4,7 @@ This page states what the support agent does for the client, what it must never 
 
 ## The client
 
-Atelier Mierla is an invented print shop run by a Bucharest artist. Any resemblance to a real business is a coincidence.
+Studio Cobalt is an invented print shop run by a Bucharest artist. Any resemblance to a real business is a coincidence.
 
 - The shop sells art prints online. A print partner makes each print to order and ships it.
 - Open prints cost 150 to 450 lei. Limited-drop prints cost 900 to 1,500 lei and are never restocked.
@@ -36,7 +36,7 @@ The functions enforce the rules, not the prompt. A request that breaks the polic
 | Payment | Card only. The shop does not offer cash on delivery. |
 | Delivery change | Possible until the order ships. Staff must approve it. |
 | Cancellation | Possible while the order is paid and production has not started. Staff must approve the refund. |
-| Return | Within 14 days of delivery, for catalogue prints. The customer pays the return postage. Staff must approve the refund. |
+| Return | Within 14 days of delivery, for open and limited prints. The customer pays the return postage. Staff must approve the refund. |
 | Damage or misprint | Report within 14 days of delivery. The customer gets a reprint or a refund. Staff ask for a photo and approve. |
 | Large refund | A person decides any refund above 1,000 lei. The agent hands over. |
 | Commissioned work | Not returnable. |

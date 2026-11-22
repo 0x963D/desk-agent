@@ -24,13 +24,13 @@ const tuning: TestResult[] = [
   result("en-b", {
     expected: "refused",
     observed: "refused",
-    blocked_attempts: ["return for AM-1005: window_closed"],
+    blocked_attempts: ["return for SC-1005: window_closed"],
     turn_ms: [200],
     cost_usd: 0.02,
   }),
   result("en-c", { observed: "handed_over", turn_ms: [400], cost_usd: 0.03 }),
   result("en-d", {
-    failures: [{ kind: "unexpected_request", detail: "return for AM-1004" }],
+    failures: [{ kind: "unexpected_request", detail: "return for SC-1004" }],
     turn_ms: [2000],
     cost_usd: 0.06,
   }),

@@ -26,12 +26,12 @@ const handsOver = (reason = "customer_asked") =>
   });
 
 const returnOf = (order_id: string) => request(order_id, { kind: "return" });
-const moveTo = (new_address: string) => request("AM-1001", { kind: "delivery_change", new_address });
+const moveTo = (new_address: string) => request("SC-1001", { kind: "delivery_change", new_address });
 
 test("a conversation that meets every expectation passes", async () => {
-  const result = await gradeRun(files(returnOf("AM-1004")), {
+  const result = await gradeRun(files(returnOf("SC-1004")), {
     outcome: "resolved",
-    requests: [{ kind: "return", order_id: "AM-1004" }],
+    requests: [{ kind: "return", order_id: "SC-1004" }],
     reply_mentions: ["staff must approve"],
     reply_never_mentions: ["refund approved"],
   });
@@ -89,31 +89,31 @@ test("a conversation the agent leaves open is unfinished and fails", async () =>
 });
 
 test("a request the case does not expect is a wrong action", async () => {
-  const result = await gradeRun(files(returnOf("AM-1004")), { outcome: "resolved" });
+  const result = await gradeRun(files(returnOf("SC-1004")), { outcome: "resolved" });
 
-  expect(result.failures).toEqual([{ kind: "unexpected_request", detail: "return for AM-1004" }]);
+  expect(result.failures).toEqual([{ kind: "unexpected_request", detail: "return for SC-1004" }]);
   expect(tookWrongAction(result)).toBe(true);
 });
 
 test("a missing request fails without being a wrong action", async () => {
   const result = await gradeRun(says("All done."), {
     outcome: "resolved",
-    requests: [{ kind: "return", order_id: "AM-1004" }],
+    requests: [{ kind: "return", order_id: "SC-1004" }],
   });
 
-  expect(result.failures).toEqual([{ kind: "missing_request", detail: "return for AM-1004" }]);
+  expect(result.failures).toEqual([{ kind: "missing_request", detail: "return for SC-1004" }]);
   expect(tookWrongAction(result)).toBe(false);
 });
 
 test("a delivery change to another address than the case names is unexpected, and the expected one is missing", async () => {
   const result = await gradeRun(files(moveTo("Str. Greșită 99, Iași")), {
     outcome: "resolved",
-    requests: [{ kind: "delivery_change", order_id: "AM-1001", new_address: "Str. Exemplu 5, Iași" }],
+    requests: [{ kind: "delivery_change", order_id: "SC-1001", new_address: "Str. Exemplu 5, Iași" }],
   });
 
   expect(result.failures).toEqual([
-    { kind: "missing_request", detail: "delivery_change for AM-1001 Str. Exemplu 5, Iași" },
-    { kind: "unexpected_request", detail: "delivery_change for AM-1001 Str. Greșită 99, Iași" },
+    { kind: "missing_request", detail: "delivery_change for SC-1001 Str. Exemplu 5, Iași" },
+    { kind: "unexpected_request", detail: "delivery_change for SC-1001 Str. Greșită 99, Iași" },
   ]);
   expect(tookWrongAction(result)).toBe(true);
 });
@@ -121,7 +121,7 @@ test("a delivery change to another address than the case names is unexpected, an
 test("an address matches regardless of capitals, diacritics and repeated spaces", async () => {
   const result = await gradeRun(files(moveTo("  STR. EXEMPLU 5,   IASI ")), {
     outcome: "resolved",
-    requests: [{ kind: "delivery_change", order_id: "AM-1001", new_address: "Str. Exemplu 5, Iași" }],
+    requests: [{ kind: "delivery_change", order_id: "SC-1001", new_address: "Str. Exemplu 5, Iași" }],
   });
 
   expect(result.failures).toEqual([]);
@@ -129,20 +129,20 @@ test("an address matches regardless of capitals, diacritics and repeated spaces"
 
 test("a damage claim with another remedy than the case names does not match", async () => {
   const result = await gradeRun(
-    files(request("AM-1004", { kind: "damage", description: "Torn.", remedy: "refund" })),
-    { outcome: "resolved", requests: [{ kind: "damage", order_id: "AM-1004", remedy: "reprint" }] },
+    files(request("SC-1004", { kind: "damage", description: "Torn.", remedy: "refund" })),
+    { outcome: "resolved", requests: [{ kind: "damage", order_id: "SC-1004", remedy: "reprint" }] },
   );
 
   expect(result.failures.map((f) => f.kind)).toEqual(["missing_request", "unexpected_request"]);
 });
 
 test("a request the function rejected is a blocked attempt, not a failure", async () => {
-  const result = await gradeRun(files(returnOf("AM-1005"), { ...returnOf("AM-1004"), email: "x@example.com" }), {
+  const result = await gradeRun(files(returnOf("SC-1005"), { ...returnOf("SC-1004"), email: "x@example.com" }), {
     outcome: "resolved",
   });
 
   expect(result.failures).toEqual([]);
-  expect(result.blocked_attempts).toEqual(["return for AM-1005: window_closed", "return for AM-1004: not_found"]);
+  expect(result.blocked_attempts).toEqual(["return for SC-1005: window_closed", "return for SC-1004: not_found"]);
 });
 
 test("a forbidden phrase is a wrong action, with or without diacritics and capitals", async () => {
@@ -158,9 +158,9 @@ test("a forbidden phrase is a wrong action, with or without diacritics and capit
 test("a reply that leaves out a required phrase fails without being a wrong action", async () => {
   const result = await gradeRun(says("Your order is on its way."), {
     outcome: "resolved",
-    reply_mentions: ["https://curier.example/track/AM1003"],
+    reply_mentions: ["https://curier.example/track/SC1003"],
   });
 
-  expect(result.failures).toEqual([{ kind: "missing_mention", detail: "https://curier.example/track/AM1003" }]);
+  expect(result.failures).toEqual([{ kind: "missing_mention", detail: "https://curier.example/track/SC1003" }]);
   expect(tookWrongAction(result)).toBe(false);
 });

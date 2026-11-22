@@ -14,11 +14,11 @@ test("the trace holds every turn with its tool calls, time and cost", async () =
   const agent = scripted(
     () => ({ text: "Which order?", status: "open", usage: { duration_ms: 900, cost_usd: 0.002 } }),
     async (tools) => {
-      await tools.call("lookup_order", { order_id: "AM-1999", email: "x@example.com" });
+      await tools.call("lookup_order", { order_id: "SC-1999", email: "x@example.com" });
       return { text: "Found nothing.", status: "refused", usage: { duration_ms: 1500, cost_usd: 0.004 } };
     },
   );
-  const testCase = caseExpecting(resolved, { turns: ["Hi", "AM-1999"] });
+  const testCase = caseExpecting(resolved, { turns: ["Hi", "SC-1999"] });
 
   const conversation = await runCase(agent, testCase, await testBackend());
 
@@ -26,7 +26,7 @@ test("the trace holds every turn with its tool calls, time and cost", async () =
   expect(conversation.turns).toEqual([
     { role: "customer", text: "Hi" },
     { role: "agent", text: "Which order?", status: "open", tool_calls: [], duration_ms: 900, cost_usd: 0.002 },
-    { role: "customer", text: "AM-1999" },
+    { role: "customer", text: "SC-1999" },
     {
       role: "agent",
       text: "Found nothing.",
@@ -34,7 +34,7 @@ test("the trace holds every turn with its tool calls, time and cost", async () =
       tool_calls: [
         {
           name: "lookup_order",
-          input: { order_id: "AM-1999", email: "x@example.com" },
+          input: { order_id: "SC-1999", email: "x@example.com" },
           output: { ok: false, error: { code: "not_found", message: expect.any(String) } },
         },
       ],
@@ -107,10 +107,10 @@ test("each conversation starts from the fixtures, not from the previous conversa
   const world = await testWorld();
   const fileReturn = () =>
     scripted(async (tools) => {
-      await tools.call("file_request", request("AM-1004", { kind: "return" }));
+      await tools.call("file_request", request("SC-1004", { kind: "return" }));
       return { text: "Filed.", status: "resolved" };
     });
-  const testCase = caseExpecting({ outcome: "resolved", requests: [{ kind: "return", order_id: "AM-1004" }] });
+  const testCase = caseExpecting({ outcome: "resolved", requests: [{ kind: "return", order_id: "SC-1004" }] });
 
   await runCase(fileReturn(), testCase, createBackend(world));
   const second = await runCase(fileReturn(), testCase, createBackend(world));
@@ -126,7 +126,7 @@ test("effects are read from the trace, so a backend that only answers calls is e
     },
   };
   const agent = scripted(async (tools) => {
-    await tools.call("file_request", request("AM-1001", { kind: "cancellation" }));
+    await tools.call("file_request", request("SC-1001", { kind: "cancellation" }));
     await tools.call("hand_over", { reason: "staff_decision", summary: "Asked for a refund too." });
     await tools.call("hand_over", { reason: "complaint", summary: "Second call." });
     return { text: "Filed, and a colleague will follow up.", status: "open" };
@@ -135,9 +135,9 @@ test("effects are read from the trace, so a backend that only answers calls is e
     {
       outcome: "handed_over",
       handover_reason: "staff_decision",
-      requests: [{ kind: "cancellation", order_id: "AM-1001" }],
+      requests: [{ kind: "cancellation", order_id: "SC-1001" }],
     },
-    { turns: ["Cancel AM-1001 please.", "Hello?"] },
+    { turns: ["Cancel SC-1001 please.", "Hello?"] },
   );
 
   const saved = Conversation.parse(JSON.parse(JSON.stringify(await runCase(agent, testCase, answering))));
@@ -150,7 +150,7 @@ test("effects are read from the trace, so a backend that only answers calls is e
 test("during an outage the rule-based agent hands over as a system failure", async () => {
   const testCase = caseExpecting(
     { outcome: "handed_over", handover_reason: "system_failure" },
-    { turns: ["Where is my order AM-1003? jonas.weber@example.com"], outage: true },
+    { turns: ["Where is my order SC-1003? jonas.weber@example.com"], outage: true },
   );
 
   const conversation = await runCase(ruleBasedAgent, testCase, await testBackend({ outage: true }));

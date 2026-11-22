@@ -1,5 +1,4 @@
 import {
-  expectedRequests,
   type Conversation,
   type Failure,
   type RequestExpectation,
@@ -69,7 +68,7 @@ export function grade(testCase: TestCase, conversation: Conversation): TestResul
   }
 
   const unclaimed = filedRequests(turns);
-  for (const wanted of expectedRequests(expect)) {
+  for (const wanted of expect.requests) {
     const at = unclaimed.findIndex((filed) => matches(wanted, filed));
     if (at === -1) failures.push({ kind: "missing_request", detail: describeWanted(wanted) });
     else unclaimed.splice(at, 1);

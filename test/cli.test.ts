@@ -41,7 +41,7 @@ test("tune runs the tuning cases through the rule-based agent and saves the run 
   expect(printed).toContain("tuning: 4 conversations");
   expect(printed).toContain("passed every check     4/4 (100%)");
   expect(printed).toContain("blocked attempts       1/4 (25%)");
-  expect(printed).toContain("(blocked: return for AM-1005: window_closed)");
+  expect(printed).toContain("(blocked: return for SC-1005: window_closed)");
   expect(printed).not.toContain("held-out");
   expect((await results(dir)).map((r) => [r.case_id, r.observed])).toEqual([
     ["en-asks-for-a-person", "handed_over"],
@@ -145,11 +145,11 @@ test("regrading applies the case as it reads now", async () => {
   const root = await testRepo();
   await main(["tune"], root);
   const caseFile = join(root, "cases", "tuning", "en-where-is-my-order.yaml");
-  await writeFile(caseFile, (await readFile(caseFile, "utf8")).replace("track/AM1003", "track/AM9999"));
+  await writeFile(caseFile, (await readFile(caseFile, "utf8")).replace("track/SC1003", "track/SC9999"));
 
   const reprinted = await main(["regrade", await onlyRun(root, "traces")], root);
 
-  expect(reprinted).toContain("FAIL  missing_mention: https://curier.example/track/AM9999");
+  expect(reprinted).toContain("FAIL  missing_mention: https://curier.example/track/SC9999");
   expect(reprinted).toContain("passed every check     3/4 (75%)");
 });
 

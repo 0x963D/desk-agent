@@ -1,6 +1,6 @@
 # Design
 
-This page explains the foundation of the support agent for Atelier Mierla: the data shapes, the five functions, the runner, the grader and the scoring record. It records what was chosen, what was considered, and why the alternatives lost. [The scope](scope.md) holds the shop policy, and [the case contract](writing-cases.md) holds the case and fixture formats. This page does not repeat them.
+This page explains the foundation of the support agent for Studio Cobalt: the data shapes, the five functions, the runner, the grader and the scoring record. It records what was chosen, what was considered, and why the alternatives lost. [The scope](scope.md) holds the shop policy, and [the case contract](writing-cases.md) holds the case and fixture formats. This page does not repeat them.
 
 Nothing here calls a model or the network.
 

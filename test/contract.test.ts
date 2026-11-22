@@ -29,7 +29,7 @@ test("the runner's own cases and orders keep the contract", async () => {
   const heldOut = await loadSplit(root, "held-out");
 
   expect(tuning.cases.map((c) => c.id)).toContain("ro-retur-in-termen");
-  expect(heldOut.orders.map((o) => o.order_id)).toEqual(["AM-2001", "AM-2002"]);
+  expect(heldOut.orders.map((o) => o.order_id)).toEqual(["SC-2001", "SC-2002"]);
 });
 
 test("missing case folders and fixture files load as an empty split", async () => {
@@ -55,8 +55,8 @@ test.each<[string, string, string | RegExp, string, RegExp]>([
   ["an id that differs from the file name", CASE, "id: ro-retur-in-termen", "id: ro-retur", /must equal the file name/],
   ["an id that does not start with the language", CASE, "language: ro", "language: en", /starts with the language/],
   ["a split that differs from the folder", CASE, "split: tuning", "split: held-out", /sits in cases\/tuning/],
-  ["an expected order missing from the split's fixture", CASE, "order_id: AM-1004", "order_id: AM-1999", /AM-1999.*does not hold/],
-  ["an order number outside the split's range", ORDERS, "order_id: AM-1001", "order_id: AM-2500", /outside the tuning range/],
+  ["an expected order missing from the split's fixture", CASE, "order_id: SC-1004", "order_id: SC-1999", /SC-1999.*does not hold/],
+  ["an order number outside the split's range", ORDERS, "order_id: SC-1001", "order_id: SC-2500", /outside the tuning range/],
   ["a total that differs from the sum of the items", ORDERS, "total_ron: 350", "total_ron: 360", /sum of the item prices/],
   ["an order email outside example.com", ORDERS, "ana.lungu@example.com", "ana.lungu@mail.test", /example\.com/],
   ["an email in a message outside example.com", CASE, "irina.pavel@example.com", "irina@mail.test", /not at example\.com/],
@@ -78,7 +78,7 @@ test.each<[string, string, string | RegExp, string, RegExp]>([
 
 test("a case may not expect the same kind twice for one order", async () => {
   const root = await testRepo();
-  await edit(root, CASE, "      order_id: AM-1004\n", "      order_id: AM-1004\n    - kind: return\n      order_id: AM-1004\n");
+  await edit(root, CASE, "      order_id: SC-1004\n", "      order_id: SC-1004\n    - kind: return\n      order_id: SC-1004\n");
 
   await expect(loadSplit(root, "tuning")).rejects.toThrow("at most once per order");
 });

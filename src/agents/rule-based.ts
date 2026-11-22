@@ -7,13 +7,13 @@ const COMMISSION = /\b(tatuaj\w*|tattoo\w*|comision\w*|commission\w*|programare)
 const CANCEL = /\b(anul\w*|cancel\w*)\b/;
 const RETURN = /\b(retur\w*|return\w*|refund\w*|rambursa\w*)\b/;
 const STATUS = /\b(unde|cand|status|stadiu\w*|where|when|track\w*)\b/;
-const ORDER_NUMBER = /\bam-\d{4}\b/;
+const ORDER_NUMBER = /\bsc-\d{4}\b/;
 const EMAIL = /[^\s@,;:]+@[^\s@,;:]+\.[a-z]{2,}/;
 const ROMANIAN = /\b(buna|comanda|vreau|unde|cand|este|pentru|multumesc|emailul|sa)\b/;
 
 const SAY = {
   ro: {
-    askDetails: "Vă ajut cu plăcere. Îmi spuneți numărul comenzii (AM-1234) și adresa de email folosită la comandă?",
+    askDetails: "Vă ajut cu plăcere. Îmi spuneți numărul comenzii (SC-1234) și adresa de email folosită la comandă?",
     notFound: "Nu găsesc nicio comandă cu acest număr și acest email, așa că nu pot da detalii.",
     paid: (id: string) => `Comanda ${id} este plătită și intră curând în producție.`,
     inProduction: (id: string) => `Comanda ${id} este în producție.`,
@@ -25,7 +25,7 @@ const SAY = {
     handover: "Vă transfer către un coleg, care preia conversația.",
   },
   en: {
-    askDetails: "Happy to help. What is your order number (AM-1234) and the email you ordered with?",
+    askDetails: "Happy to help. What is your order number (SC-1234) and the email you ordered with?",
     notFound: "I can't find an order with that number and email, so I can't share any details.",
     paid: (id: string) => `Order ${id} is paid and goes into production soon.`,
     inProduction: (id: string) => `Order ${id} is in production.`,
