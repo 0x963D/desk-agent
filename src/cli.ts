@@ -8,7 +8,15 @@ import { createBackend } from "./backend.ts";
 import { envFile } from "./env.ts";
 import { caseDir, filesIn, loadSplit, readConversations, writeJson } from "./files.ts";
 import { grade, passed } from "./grade.ts";
-import { appendLedger, gitState, hashCaseFiles, ledgerFile, readLedger, type LedgerEntry } from "./ledger.ts";
+import {
+  appendLedger,
+  gitState,
+  hashCaseFiles,
+  ledgerFile,
+  readLedger,
+  scoredRunDir,
+  type LedgerEntry,
+} from "./ledger.ts";
 import { recordedModel, recordingDir, recordingPath, recordModel, type Recorder } from "./model.ts";
 import { reportTable, type ReportRow } from "./report.ts";
 import { runCase } from "./runner.ts";
@@ -115,11 +123,7 @@ async function replay(root: string): Promise<string> {
 }
 
 async function regradeScored(root: string, cases: TestCase[], entry: LedgerEntry): Promise<void> {
-  const dir = resolve(root, entry.run);
-  if (relative(join(root, "results"), dir).startsWith("..")) {
-    throw new Error(`the ledger line of ${entry.time} names ${entry.run}, which is not a run under results/`);
-  }
-  const conversations = await readConversations(dir);
+  const conversations = await readConversations(scoredRunDir(root, entry.run));
   if (conversations.length === 0) {
     throw new Error(`${entry.run}, the latest scored run of ${entry.agent}, holds no saved conversations`);
   }

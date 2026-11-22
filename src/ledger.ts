@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { appendFile, mkdir, readFile } from "node:fs/promises";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { z } from "zod";
 import { caseDir, filesIn, unlessMissing } from "./files.ts";
 import type { Split } from "./shapes.ts";
@@ -19,6 +19,12 @@ export const LedgerEntry = z.strictObject({
 export type LedgerEntry = z.infer<typeof LedgerEntry>;
 
 export const ledgerFile = (root: string) => join(root, "results", "ledger.jsonl");
+
+export function scoredRunDir(root: string, run: string): string {
+  const dir = resolve(root, run);
+  if (relative(join(root, "results"), dir).startsWith("..")) throw new Error(`${run} is not a run under results/`);
+  return dir;
+}
 
 export function gitState(root: string): { commit: string; dirty: boolean } {
   const git = (...args: string[]) =>
