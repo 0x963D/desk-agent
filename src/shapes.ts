@@ -255,6 +255,7 @@ export const Failure = z.strictObject({
     "missing_mention",
     "forbidden_mention",
     "empty_reply",
+    "wrong_language",
   ]),
   detail: z.string(),
 });

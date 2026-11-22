@@ -5,6 +5,7 @@ import {
   type TestCase,
   type TestResult,
 } from "./shapes.ts";
+import { languageOf, type Reading } from "./language.ts";
 import { normalize } from "./text.ts";
 import type { ToolInput } from "./tools.ts";
 import { agentTurns, blockedAttempts, filedRequests, handoverOf, outcomeOf } from "./trace.ts";
@@ -91,6 +92,19 @@ export function grade(testCase: TestCase, conversation: Conversation): TestResul
   said.forEach((reply, at) => {
     if (reply === "") failures.push({ kind: "empty_reply", detail: `reply ${at + 1}` });
   });
+  let asked: Reading = "unsure";
+  let reply = 0;
+  for (const turn of turns) {
+    if (turn.role === "customer") {
+      asked = languageOf(turn.text);
+      continue;
+    }
+    reply++;
+    const answered = languageOf(turn.text);
+    if (asked !== "unsure" && answered !== "unsure" && answered !== asked) {
+      failures.push({ kind: "wrong_language", detail: `reply ${reply} is ${answered}, the customer wrote ${asked}` });
+    }
+  }
   const mentioned = (phrase: string) => said.some((reply) => mentions(reply, normalize(phrase)));
   for (const phrase of expect.reply_mentions) {
     if (!mentioned(phrase)) failures.push({ kind: "missing_mention", detail: phrase });
