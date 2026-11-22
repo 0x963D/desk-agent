@@ -1,8 +1,8 @@
 # Design
 
-This page explains the foundation of the support agent for Studio Cobalt: the data shapes, the five functions, the runner, the grader and the scoring record. It records what was chosen, what was considered, and why the alternatives lost. [The scope](scope.md) holds the shop policy, and [the case contract](writing-cases.md) holds the case and fixture formats. This page does not repeat them.
+This page explains the foundation of the support agent for Studio Cobalt: the data shapes, the five functions and the MCP server that carries them, the runner, the recorder, the grader and the scoring record. It records what was chosen, what was considered, and why the alternatives lost. [The scope](scope.md) holds the shop policy, and [the case contract](writing-cases.md) holds the case and fixture formats. This page does not repeat them.
 
-Nothing here calls a model or the network.
+Nothing here calls a model or the network unless a command is given `--record`.
 
 	pnpm test                    # the runner's own tests, offline
 	pnpm typecheck
@@ -10,23 +10,26 @@ Nothing here calls a model or the network.
 	pnpm score                   # run cases/held-out, write results/<agent>/<run>/, append results/ledger.jsonl
 	pnpm regrade <run directory> # grade a saved run again, without the agent
 	pnpm tune --agent rule-based # pick an agent from the registry
+	pnpm tune --record           # call the agent's live model and write recordings/<agent>/tuning/
+	pnpm mcp                     # serve the five functions over stdio, on the tuning orders
 
-Git ignores `traces/`. A scoring run in `results/` is meant to be committed.
+Git ignores `traces/` and `.artifacts/`. A scoring run in `results/` and a recording in `recordings/` are meant to be committed.
 
 ## Read the code in this order
 
-The source is about 1,250 lines in 15 files. `wc -l src/*.ts src/agents/*.ts` regenerates the count.
+The source is about 1,400 lines in 17 files. `wc -l src/*.ts src/agents/*.ts` regenerates the count.
 
 1. `src/shapes.ts` names every shape that crosses a file or a function boundary.
 2. `src/tools.ts` holds the five function contracts.
 3. `src/backend.ts` is the in-memory shop. It verifies the customer and enforces the policy.
-4. `src/agent.ts` is the agent boundary. `src/model.ts` is the seam for recorded model calls.
-5. `src/runner.ts` plays one case and returns its conversation.
-6. `src/trace.ts` derives the effects and the outcome from a conversation.
-7. `src/grade.ts` compares a conversation with its case.
-8. `src/summary.ts` turns the results of one run into the numbers.
-9. `src/files.ts` reads and writes files and enforces the case contract. `src/ledger.ts` records a scoring run.
-10. `src/cli.ts` holds the three commands. `src/agents/` holds the registry and the rule-based baseline.
+4. `src/mcp.ts` serves the backend as an MCP server and reads it back through an MCP client. It is also the stdio entry.
+5. `src/agent.ts` is the agent boundary. `src/model.ts` replays and records model calls, and `src/spend.ts` caps what a recording may spend.
+6. `src/runner.ts` plays one case through MCP and returns its conversation.
+7. `src/trace.ts` derives the effects and the outcome from a conversation.
+8. `src/grade.ts` compares a conversation with its case.
+9. `src/summary.ts` turns the results of one run into the numbers.
+10. `src/files.ts` reads and writes files and enforces the case contract. `src/ledger.ts` records a scoring run.
+11. `src/cli.ts` holds the three commands. `src/agents/` holds the registry and the rule-based baseline.
 
 ## The shapes
 
@@ -57,7 +60,7 @@ Data fields use `snake_case` everywhere, in case files, traces, function inputs 
 
 ## The five functions
 
-`contracts` in `src/tools.ts` maps each function to a description, an input schema and an output schema. `z.toJSONSchema(contracts[name].input)` gives the JSON Schema for an MCP server, and a test checks that each root is an object. A union at the root is not an object schema, and some MCP clients and model APIs reject it. That is why `file_request` keeps its union one level down, in `change`.
+`contracts` in `src/tools.ts` maps each function to a description, an input schema and an output schema. The MCP server lists each function with `z.toJSONSchema(contracts[name].input)` as its input schema, and a test checks through an MCP client that each root is an object. A union at the root is not an object schema, and some MCP clients and model APIs reject it. That is why `file_request` keeps its union one level down, in `change`.
 
 | Function | Input | Output |
 | --- | --- | --- |
@@ -84,6 +87,25 @@ Errors are values: `{ ok: false, error: { code, message } }`. The message is wri
 The windows and the limit come from `fixtures/shop.yaml`, and every window counts from its business date. When a case sets `outage: true`, every function except `hand_over` answers `unavailable`. A second `hand_over` returns the same id, and the trace keeps the first handover.
 
 The fake backend is built again from the fixtures for each conversation, so no case sees another case's requests.
+
+## The MCP server
+
+`shopServer` in `src/mcp.ts` serves one backend over MCP with the official TypeScript SDK, `@modelcontextprotocol/server` and `@modelcontextprotocol/client` at exactly 2.4.0. `tools/list` returns `toolDefinitions`: the five names, their descriptions and their input schemas. `tools/call` hands the arguments to the backend unchanged and answers with the function result as `structuredContent`, the same result as JSON text in `content`, and `isError` set when the result is `ok: false`. A function error is therefore a tool result the model reads, never a JSON-RPC error. A name that is not one of the five answers `invalid_input` the same way.
+
+`remoteTools` turns an MCP client back into `Tools`. It parses the structured content, and on success parses the data with the function's output schema, so a malformed answer fails loudly at the boundary.
+
+The runner sends every function call through MCP. For each conversation it builds a server on that case's backend, which holds the case's orders and outage flag, connects a client over the SDK's `InMemoryTransport`, and closes both when the conversation ends. The trace records the input as the agent sent it and the output as the client returned it, so the traces of the rule-based agent are the same as before MCP, apart from the conversation id and the time.
+
+`pnpm mcp` runs `src/mcp.ts`, which serves the tuning orders over stdio with `serveStdio`. It reads `fixtures/tuning.yaml` by name, so it never serves the held-out orders. pnpm writes its own banner to stderr, so an MCP client can launch `pnpm mcp` directly. To try the functions by hand, give the MCP Inspector the command `pnpm mcp`.
+
+| Alternative | Verdict | Why |
+| --- | --- | --- |
+| `McpServer.registerTool` with the zod input schema. | Rejected. | The SDK validates the arguments before the handler runs and answers a bad call with its own text, not `invalid_input`. An outage with bad arguments would answer a validation error instead of `unavailable`. The backend would no longer be the one validator. |
+| One server for the whole run. | Rejected. | The backend holds the filed requests, so the cases would share state. |
+| Agents call the backend directly, and MCP is only for outside clients. | Rejected. | Two paths to the same functions. A model agent would be measured on a path no deployment uses. |
+| The low-level `Server`, one per conversation, over the backend. | Chosen. | The backend stays the only validator and the only source of errors, the listed schemas are the contract schemas, and each case starts clean. |
+
+The runner's client and the in-memory server negotiate protocol revision 2025-11-25, the default of the 2.4.0 client. `serveStdio` also serves 2026-07-28 to a client that opens with it.
 
 ## Contested point 1: how a case states what it expects
 
@@ -169,7 +191,33 @@ A model-backed agent still needs the recording of its own case. The runner, whic
 
 Recordings live at `recordings/<agent>/<split>/<case id>.json`, one array of `ModelCall` per file. None exists yet. A missing recording fails with a message that recording one is a paid call and needs the maintainer's approval.
 
-## Contested point 7: where time and cost live
+## Contested point 7: how a recording is made
+
+An agent in the registry may declare `liveModel`, a function that builds its live model client. The client answers `complete(request)` with the response and the cost of that call in US dollars, which the provider reports. The rule-based agent declares none, and `--record` refuses it before the run starts.
+
+With `--record`, the CLI builds the live client once per run and, for each conversation, wraps it with `recordModel` in `src/model.ts`. The agent receives the wrapper as `model` in `open`, so its code is the same for a live run and a replay. For each call the recorder:
+
+1. asks the spend guard whether a live call is allowed,
+2. copies the request, then times the live call with `performance.now()`,
+3. adds the reported cost to the running spend,
+4. keeps the call, with the copied request and response, the time and the cost.
+
+When the conversation ends, the CLI saves the calls in order to the conversation's recording path. A replay of that file gives the agent the same responses, times and costs, so it produces the same turns.
+
+The request is copied when the call is made, because an agent usually keeps one message list and grows it after each call. A recording that kept a reference would store the final list for every call, and the replay would fail on its first call. A test grows the list and replays.
+
+A model agent gets its tools from `open` as well. `tools` is an MCP client over that conversation's server, and `toolDefinitions` in `src/mcp.ts` is the list the server returns from `tools/list`: name, description and JSON Schema input, which map directly onto a model API's tool definitions. A model agent sends those definitions in its requests, so a change to a description makes the old recordings fail to replay until they are recorded again.
+
+The spend guard in `src/spend.ts` keeps the running spend in `.artifacts/spend.json`, which Git ignores. It refuses a live call when the spend so far has reached the cap, which `SPEND_CAP_USD` sets and which defaults to 50 dollars. The CLI loads `.env` at start with `process.loadEnvFile`, so the cap and a provider key can live there, and no message prints a value from it.
+
+| Alternative | Verdict | Why |
+| --- | --- | --- |
+| The agent records its own calls. | Rejected. | Each agent would repeat the timing, the cost and the file format, and could get them wrong. |
+| A spend total per run. | Rejected. | A crash or a second run starts again from zero, so the cap would bound one run, not the money spent. |
+| Save the recording after every call. | Rejected. | An interrupted conversation would leave a recording that replays its first turns and then fails. |
+| A wrapper around the live client, a spend file that outlives runs, one save per conversation. | Chosen. | Time and cost are measured in one place, the cap holds across runs and crashes, and a saved recording is always whole. |
+
+## Contested point 8: where time and cost live
 
 Time and cost live on the agent turn as `duration_ms` and `cost_usd`. A test result copies the turn times and sums the cost. The summary reads results only.
 
@@ -183,7 +231,7 @@ Time and cost live on the agent turn as `duration_ms` and `cost_usd`. A test res
 | The recorded time added to the runner's clock. | Rejected. | A replay would add the replay's own overhead, so a replay and the live run would report different times. |
 | The recorded time and cost, reported by the agent. | Chosen. | A live run and its replay add up the same recorded numbers. |
 
-## Contested point 8: what a run leaves behind
+## Contested point 9: what a run leaves behind
 
 Each run writes its own directory, named by its start time and a random suffix. Conversations are written as each case finishes, then `results.json` and `summary.json`. A second run never touches the first.
 
@@ -197,7 +245,7 @@ A summary needs one result for every case of its split. An interrupted run leave
 | Summarise whatever results exist. | Rejected. | An interrupted run published numbers over fewer cases. |
 | `regrade` writes new results into the run. | Rejected. | A committed scoring run would change after the fact. `regrade` prints and writes nothing. |
 
-## Contested point 9: how the agent is chosen
+## Contested point 10: how the agent is chosen
 
 `src/agents/index.ts` holds a registry keyed by agent name. `--agent <name>` picks one, and the default is `rule-based`, the only entry today. The registry is a plain object, so adding an agent is one line.
 
@@ -218,5 +266,9 @@ A summary needs one result for every case of its split. An interrupted run leave
 - An agent that throws stops the run. The conversations written before it stay on disk and cannot be summarised.
 - An outage covers a whole case. No case can test a function that fails in the middle of a conversation.
 - The rule texts and the policy numbers are written separately in `fixtures/shop.yaml`, so a change to a number needs a change to its text.
-- Turn time for the rule-based agent includes the fake backend, which takes microseconds. A model-backed turn reports model time only, so it leaves out tool time until recordings capture it.
+- Turn time for the rule-based agent includes the MCP round trip and the fake backend, well under a millisecond in the median. A model-backed turn reports model time only, so it leaves out tool time until recordings capture it.
+- The spend guard checks before a call and counts after it, so the last allowed call can carry the spend past the cap. The next call is refused.
+- The spend file is read and written for each call. Two recording runs at the same time in one checkout could lose a cost. Cases run one after another, so one run is safe.
+- A conversation that fails while recording leaves no recording. Its calls still count in the spend, and recording the case again pays for them again.
+- The CLI builds a live model client once per run, before the first case. A client that checks its provider key when it is built fails before anything is spent.
 - The held-out cases are in the public repository. Anyone who tunes an agent can read them.
