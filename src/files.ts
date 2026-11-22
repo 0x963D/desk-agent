@@ -12,7 +12,11 @@ import {
   type Split,
 } from "./shapes.ts";
 
-const ORDER_RANGE: Record<Split, [number, number]> = { tuning: [1000, 1999], "held-out": [2000, 2999] };
+const ORDER_RANGE: Record<Split, [number, number]> = {
+  tuning: [1000, 1999],
+  "held-out": [2000, 2999],
+  final: [3000, 3999],
+};
 const EMAIL_IN_TEXT = /[^\s@<>()"',;:]+@[^\s@<>()"',;:]+\.[a-z]{2,}/gi;
 
 function parseAs<T>(schema: z.ZodType<T>, value: unknown, file: string): T {

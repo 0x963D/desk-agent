@@ -8,6 +8,7 @@ Nothing here calls a model or the network unless a command is given `--record`, 
 	pnpm typecheck
 	pnpm tune                    # run cases/tuning, write traces/<agent>/<run>/
 	pnpm score                   # run cases/held-out, write results/<agent>/<run>/, append results/ledger.jsonl
+	pnpm score --set final       # the same on cases/final
 	pnpm regrade <run directory> # grade a saved run again, without the agent
 	pnpm replay                  # run cases/tuning for every agent that can run offline
 	pnpm report                  # the latest held-out score of every agent, regraded from results/
@@ -58,7 +59,7 @@ Every shape is a zod schema in `src/shapes.ts`, and its TypeScript type is deriv
 | `Conversation` | The trace of one run of one case: an opaque id, the case id, the split, the agent and the turns. | `<run>/conversations/<case id>.json` |
 | `TestResult` | The grade of one conversation. | `<run>/results.json` |
 | `Summary` | The numbers for one run of one split. | `<run>/summary.json` |
-| `LedgerEntry` | One scoring run: the time, the agent, the commit, the tree state, a hash of the held-out cases and the summary. | `results/ledger.jsonl` |
+| `LedgerEntry` | One scoring run: the time, the agent, the commit, the tree state, a hash of the cases of its set and the summary, whose split names the set. | `results/ledger.jsonl` |
 | `ChatLog` | One `pnpm chat` session: the conversation id, the agent, the replayed case if any, the start time and the turns, every string in them masked. | `traces/chat/<agent>/<session>.json` |
 | `AuditKey` | The seed of a blind packet and, for each random id in it, the agent, the run and the case. | A path given by `--key`, outside the packet. |
 | `Verdict` | One reader's judgement of one conversation: the id, `acceptable`, one field per criterion and a note. | `results/audit/<reader>.jsonl` |
@@ -113,7 +114,7 @@ The fake backend is built again from the fixtures for each conversation, so no c
 
 The runner sends every function call through MCP. For each conversation it builds a server on that case's backend, which holds the case's orders and outage flag, connects a client over the SDK's `InMemoryTransport`, and closes both when the conversation ends. `openSession` does this for one conversation and takes the customer's messages one at a time. `runCase` plays a case's turns through it, and `pnpm chat` plays a person's, so both reach the agent and the shop by one path. The trace records the input as the agent sent it and the output as the client returned it, so the traces of the rule-based agent are the same as before MCP, apart from the conversation id and the time. The runner takes a JSON copy of the input before it sends it and of the output when it arrives, and it hands the agent a copy of the history at each turn. Agent code that later edits a call or an earlier turn changes its own copy, never the trace.
 
-`pnpm mcp` runs `src/mcp.ts`, which serves the tuning orders over stdio with `serveStdio`. It reads `fixtures/tuning.yaml` by name, so it never serves the held-out orders. pnpm writes its own banner to stderr, so an MCP client can launch `pnpm mcp` directly. To try the functions by hand, give the MCP Inspector the command `pnpm mcp`.
+`pnpm mcp` runs `src/mcp.ts`, which serves the tuning orders over stdio with `serveStdio`. It reads `fixtures/tuning.yaml` by name, so it never serves the held-out or the final orders. pnpm writes its own banner to stderr, so an MCP client can launch `pnpm mcp` directly. To try the functions by hand, give the MCP Inspector the command `pnpm mcp`.
 
 | Alternative | Verdict | Why |
 | --- | --- | --- |
@@ -272,9 +273,9 @@ Each run writes its own directory, named by its start time and a random suffix. 
 
 A summary needs one result for every case of its split. An interrupted run leaves its finished conversations on disk, and `regrade` on that directory refuses to print numbers and names the missing cases. The same refusal covers a case added after the run.
 
-`pnpm score` first reads the commit and whether the tree is dirty, and refuses to run outside a Git checkout. It hashes the held-out case files, runs, appends one line to `results/ledger.jsonl`, and only then saves `results.json` and `summary.json`. No saved score therefore exists without its line. A ledger write that fails leaves the conversations and no summary.
+`pnpm score` first reads the commit and whether the tree is dirty, and refuses to run outside a Git checkout. It hashes the case files of the set it scores, runs, appends one line to `results/ledger.jsonl`, and only then saves `results.json` and `summary.json`. No saved score therefore exists without its line. A ledger write that fails leaves the conversations and no summary.
 
-`regrade` on a held-out run looks up the run's ledger line. When the held-out case files have changed since that line, or when no line records the run, the report says so in a sentence after the numbers.
+`regrade` on a scored run looks up the run's ledger line. When the case files of its set have changed since that line, or when no line records the run, the report says so in a sentence after the numbers.
 
 | Alternative | Verdict | Why |
 | --- | --- | --- |
@@ -286,7 +287,7 @@ A summary needs one result for every case of its split. An interrupted run leave
 
 `src/agents/index.ts` holds a registry keyed by agent name. `--agent <name>` picks one, and the default is `rule-based`. Adding an agent is one entry in its list. The registry is a `Map`, not a plain object, because a plain object answers inherited names: `tune --agent constructor` found `Object` and crashed inside the run. A name that is not in the map is refused before a run directory exists.
 
-`pnpm tune` and `pnpm score` take no split. Each command maps to one split, and the loader reads one folder. A case whose `split` differs from its folder fails the load, so a held-out case moved into `cases/tuning` cannot run as tuning.
+`pnpm tune` takes no set and runs `cases/tuning`. `pnpm score` runs `cases/held-out`, the validation set, and `--set final` runs `cases/final`, the set the README quotes. `--set tuning` is refused, and `pnpm tune --set` is refused with the usage line, so the tuning command reaches neither scored set. The loader reads one folder. A ledger line's set is its summary's `split`, which every line has recorded since the first score, so no line needed a new field. The ledger refuses a line whose split is `tuning`. A case whose `split` differs from its folder fails the load, so a held-out case moved into `cases/tuning` cannot run as tuning.
 
 ## The report and the one-command check
 
@@ -506,7 +507,7 @@ The scored traces under `traces/` and `results/` and the recordings under `recor
 - A return covers the whole order. An order that holds any commissioned item cannot be returned, even for its catalogue prints.
 - The refund of a cancellation, a return or a damage refund is the order total. The return postage that the customer pays is not deducted.
 - A duplicate is a second request of the same kind for the same order. A rejected request does not count.
-- `cases_sha256` covers the held-out case files only. A change to `fixtures/held-out.yaml` shows in the commit and in the `dirty` flag.
+- `cases_sha256` covers the case files of the scored set only. A change to its fixture file shows in the commit and in the `dirty` flag.
 - `dirty` counts untracked files, so the results of an earlier, uncommitted score make the next score dirty.
 - An agent that throws stops the run. The conversations written before it stay on disk and cannot be summarised.
 - An outage covers a whole case. No case can test a function that fails in the middle of a conversation.
@@ -516,7 +517,7 @@ The scored traces under `traces/` and `results/` and the recordings under `recor
 - The spend file is read and written for each call. Two recording runs or live chats at the same time in one checkout could lose a cost. Cases run one after another, so one run or one chat is safe.
 - A conversation that fails while recording leaves no recording. Its calls still count in the spend, and recording the case again pays for them again.
 - The CLI builds a live model client once per run, before the first case. A client that checks its provider key when it is built fails before anything is spent.
-- The held-out cases are in the public repository. Anyone who tunes an agent can read them.
+- The held-out and final cases are in the public repository. Anyone who tunes an agent can read them, unless the tuner works in the sparse checkout that the verification skill describes.
 - Model calls that run at the same time in one turn add their times, so the turn time is their sum, not the time the customer waited.
 - No check catches a false promise in a reply, such as a refund the agent calls approved, unless the case names its exact words. [The blind audit](#the-blind-audit) asks readers to catch it.
 - The plain agent sends its function definitions with `strict: false`, so the API does not promise arguments that match the schema. The backend answers a call that does not match with `invalid_input`, and the model reads it.

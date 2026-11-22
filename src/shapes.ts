@@ -1,7 +1,11 @@
 import { z } from "zod";
 
-export const Split = z.enum(["tuning", "held-out"]);
+export const Split = z.enum(["tuning", "held-out", "final"]);
 export type Split = z.infer<typeof Split>;
+
+// The sets that `pnpm score` runs. The held-out set is the validation set, and the final set is the one the README quotes.
+export const ScoredSet = Split.exclude(["tuning"]);
+export type ScoredSet = z.infer<typeof ScoredSet>;
 
 export const Language = z.enum(["ro", "en"]);
 export type Language = z.infer<typeof Language>;

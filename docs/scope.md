@@ -96,9 +96,10 @@ The test set has 37 conversations in nine categories. Each conversation names it
 
 The set has 23 Romanian conversations and 14 English conversations. At least 8 Romanian conversations have no diacritics, and at least 2 conversations switch language.
 
-The set has two halves, a tuning half of 19 conversations and a held-out half of 18, and every category appears in both.
+The set has two halves, a tuning half of 19 conversations and a held-out half of 18, and every category appears in both. A third set, the final set, is written after them by another author.
 
 - **The tuning set** is for changing prompts and code.
-- **The held-out set** is only for scoring. Its author did not see the tuning set. Nobody reads a held-out conversation to improve the agent. Every scoring run is recorded with its commit.
+- **The held-out set** is now the validation set. Its author did not see the tuning set. The maintainer saw its expected outcomes before changing the policy on complaints and damage claims, so it can no longer stand as an unseen test. It checks a change after tuning, and nobody reads one of its conversations to improve the agent.
+- **The final set** is only for scoring. Its author saw neither the tuning set nor the validation set, and nobody reads it before it is scored. It lives in `cases/final/` and `fixtures/final.yaml`.
 
-Every number in the README comes from the held-out set.
+Every scoring run is recorded with its commit and its set. The README quotes the final set. Until the final set is scored, the README's table is the validation set's and says so.

@@ -13,7 +13,7 @@ Work in progress. Results, architecture and setup will appear here as they are m
 | plain-gpt-6-luna | 18 | 15/18 (83%) | 5/18 (28%) | 6/18 (33%) | 0/18 (0%) | 0/18 (0%) | 2386.77 ms | 3511.71 ms | $0.0002 | 940172a | 3 |
 | plain-gpt-6.2-sol | 18 | 16/18 (89%) | 7/18 (39%) | 5/18 (28%) | 0/18 (0%) | 0/18 (0%) | 2735.88 ms | 4756.97 ms | $0.0118 | 72d7b66 | 3 |
 
-Held-out set only. Each row regrades the latest scored run of one agent and matches it to its line in results/ledger.jsonl. Turn times are nearest-rank. Times scored counts the agent's lines in the ledger.
+Validation set, cases/held-out. Each row regrades the latest scored run of one agent and matches it to its line in results/ledger.jsonl. Turn times are nearest-rank. Times scored counts the agent's lines for this set in the ledger.
 <!-- report table: end -->
 
 ## Run the check

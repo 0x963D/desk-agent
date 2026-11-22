@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import { main } from "../src/cli.ts";
 import { readJson } from "../src/files.ts";
-import { LedgerEntry } from "../src/ledger.ts";
+import { hashCaseFiles, LedgerEntry } from "../src/ledger.ts";
 import { TestResult } from "../src/shapes.ts";
 import { commitAll, testRepo } from "./helpers.ts";
 
@@ -91,6 +91,73 @@ test("the ledger gains one line per score and notes a dirty tree and changed cas
   const [first, second] = await ledger(root);
   expect(second?.dirty).toBe(true);
   expect(second?.cases_sha256).not.toBe(first?.cases_sha256);
+});
+
+// A final set for the test repository: the held-out cases and orders moved to the final split and its order numbers.
+async function addFinalSet(root: string) {
+  const final = (text: string) => text.replace("split: held-out", "split: final").replaceAll("SC-20", "SC-30").replaceAll("SC20", "SC30");
+  await mkdir(join(root, "cases", "final"));
+  for (const name of await readdir(join(root, "cases", "held-out"))) {
+    await writeFile(join(root, "cases", "final", name), final(await readFile(join(root, "cases", "held-out", name), "utf8")));
+  }
+  await writeFile(join(root, "fixtures", "final.yaml"), final(await readFile(join(root, "fixtures", "held-out.yaml"), "utf8")));
+}
+
+test("score --set final runs the final cases and its ledger line records the set and the hash of its cases", async () => {
+  const root = await testRepo();
+  await addFinalSet(root);
+  commitAll(root);
+
+  const printed = await main(["score", "--set", "final"], root);
+  await main(["score"], root);
+
+  expect(printed).toContain("final: 2 conversations");
+  expect(printed).toContain("passed every check     2/2 (100%)");
+  const [final, heldOut] = await ledger(root);
+  expect(final?.summary.split).toBe("final");
+  expect(final?.cases_sha256).toBe(await hashCaseFiles(root, "final"));
+  expect(heldOut?.summary.split).toBe("held-out");
+  expect(heldOut?.cases_sha256).toBe(await hashCaseFiles(root, "held-out"));
+  expect(heldOut?.cases_sha256).not.toBe(final?.cases_sha256);
+});
+
+test("report shows each scored set in its own table, the final set first", async () => {
+  const root = await testRepo();
+  await addFinalSet(root);
+  commitAll(root);
+  await main(["score"], root);
+  await main(["score", "--set", "final"], root);
+
+  const lines = (await main(["report", "--markdown"], root)).split("\n");
+
+  const notes = lines.filter((line) => /^(Final|Validation) set/.test(line)).map((line) => line.split(".")[0]);
+  expect(notes).toEqual(["Final set, cases/final", "Validation set, cases/held-out"]);
+  expect(lines.filter((line) => line.startsWith("| rule-based |"))).toHaveLength(2);
+  const heads = lines.flatMap((line, at) => (line.startsWith("| agent |") ? [at] : []));
+  const finalNote = lines.findIndex((line) => line.startsWith("Final set"));
+  expect(heads).toHaveLength(2);
+  expect(heads[0]).toBeLessThan(finalNote);
+  expect(finalNote).toBeLessThan(heads[1]!);
+});
+
+test("the tuning command reaches neither scored set, and score takes only a scored set", async () => {
+  const root = await testRepo();
+  await addFinalSet(root);
+  commitAll(root);
+
+  for (const set of ["final", "held-out"]) await expect(main(["tune", "--set", set], root)).rejects.toThrow("usage:");
+  await expect(main(["score", "--set", "tuning"], root)).rejects.toThrow("--set takes held-out or final, not tuning");
+  await expect(readdir(join(root, "results"))).rejects.toThrow();
+});
+
+test("a final order outside SC-3000 to SC-3999 fails the load", async () => {
+  const root = await testRepo();
+  await addFinalSet(root);
+  const file = join(root, "fixtures", "final.yaml");
+  await writeFile(file, (await readFile(file, "utf8")).replace("SC-3001", "SC-2001"));
+  commitAll(root);
+
+  await expect(main(["score", "--set", "final"], root)).rejects.toThrow("SC-2001 is outside the final range SC-3000 to SC-3999");
 });
 
 test("a score whose ledger line cannot be written saves no results and no summary", async () => {
@@ -249,7 +316,7 @@ test("report prints one row per agent from its latest scored run, and writes not
   const [plainHead, plainRow] = plain.split("\n");
   expect(plainHead?.split(/ {2,}/)).toEqual(MARKDOWN_HEAD[0]?.slice(2, -2).split(" | "));
   expect(plainRow?.split(/ {2,}/)).toEqual(row);
-  expect(plain).toContain("Held-out set only.");
+  expect(plain).toContain("Validation set, cases/held-out.");
   expect(await tree(root)).toEqual(before);
 });
 
@@ -302,6 +369,7 @@ test("report --runs prints every ledger line, oldest first, from the ledger alon
 
   const row = (entry: LedgerEntry, dirty: string) => [
     "rule-based",
+    "held-out",
     entry.time.slice(0, 19).replace("T", " "),
     commit,
     dirty,
@@ -316,6 +384,7 @@ test("report --runs prints every ledger line, oldest first, from the ledger alon
   const [head, ...rest] = plain.split("\n");
   expect(head?.split(/ {2,}/)).toEqual([
     "agent",
+    "set",
     "time (UTC)",
     "commit",
     "dirty",
@@ -329,7 +398,7 @@ test("report --runs prints every ledger line, oldest first, from the ledger alon
   ]);
   expect(rest.slice(0, 2).map((line) => line.split(/ {2,}/))).toEqual([row(lines[0]!, "no"), row(lines[1]!, "yes")]);
   expect(markdown.split("\n").slice(1, 4)).toEqual([
-    "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+    "| --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
     `| ${row(lines[0]!, "no").join(" | ")} |`,
     `| ${row(lines[1]!, "yes").join(" | ")} |`,
   ]);

@@ -15,12 +15,23 @@ Run from the checkout root. The product is a CLI, `node src/cli.ts` behind the p
 
 ## Fences
 
-- Never run `pnpm score` without the maintainer's approval. It runs the held-out set and appends a line to `results/ledger.jsonl`, and the report counts every line as one more use of the held-out set.
+- Never run `pnpm score` without the maintainer's approval. It runs the held-out set, the validation set, and appends a line to `results/ledger.jsonl`, and the report counts every line as one more use of that set. `pnpm score --set final` runs the final set, the one the README quotes, and needs the same approval.
 - Never pass `--record` to any command without the maintainer's approval and a cost estimate. It calls a paid provider.
 - Never run `pnpm chat` with a model agent and without `--replay` unless the maintainer approved a cost and a cap. It calls the paid provider on every reply. Set `SPEND_CAP_USD` to that cap for the run. A session of four turns on `plain-gpt-6-luna` cost $0.0006.
 - Never commit `traces/chat/`. A session log is masked by pattern, and a pattern misses some personal data, such as a name.
-- Never open `cases/held-out/` or `fixtures/held-out.yaml` to improve an agent, and never copy a held-out case's text, order or id into a prompt or a rule. The commands below may load them through the loader. Tune on `cases/tuning/` only.
+- Never open `cases/held-out/`, `cases/final/`, `fixtures/held-out.yaml` or `fixtures/final.yaml` to improve an agent, and never copy a held-out or final case's text, order or id into a prompt or a rule. The commands below may load them through the loader. Tune on `cases/tuning/` only, in the tuner's checkout below.
 - Never edit `results/` or `recordings/` by hand. A committed run and a committed recording are evidence.
+
+## The tuner's checkout
+
+Whoever changes the prompt or the agent works in a sparse clone that holds no scored set and no saved run, so nothing they read can carry a held-out or final case into the agent.
+
+	git clone --no-checkout <path to this repository> <empty folder>
+	cd <empty folder>
+	git sparse-checkout set --no-cone '/*' '!cases/held-out/' '!cases/final/' '!fixtures/held-out.yaml' '!fixtures/final.yaml' '!recordings/*/held-out/' '!recordings/*/final/' '!results/*/' '!results/held-out-failures.md'
+	git checkout <branch>
+
+A pattern with a slash inside it is anchored at the root, so `test/fixtures/cases/held-out/`, which the tests need, stays. The patterns after `/*` start without a slash, because Git Bash on Windows turns an argument such as `!/cases/held-out/` into a Windows path. `cat .git/info/sparse-checkout` shows what Git stored. `ls cases` then lists only `tuning`, and `ls results` only `ledger.jsonl`. `results/held-out-failures.md` is left out as well, because it reads held-out conversations. `pnpm typecheck`, `pnpm tune`, `pnpm replay` and `pnpm chat --replay` work there. `pnpm test`, `pnpm report` and the container check read the saved runs, so they fail there, and the maintainer runs them in a full checkout.
 
 ## Drive
 

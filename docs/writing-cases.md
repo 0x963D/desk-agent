@@ -7,10 +7,12 @@ A test case is one scripted conversation and what must be true when it ends. Thi
 | File | Holds |
 | --- | --- |
 | `cases/tuning/<id>.yaml` | One tuning case. |
-| `cases/held-out/<id>.yaml` | One held-out case. |
+| `cases/held-out/<id>.yaml` | One case of the validation set. |
+| `cases/final/<id>.yaml` | One case of the final set. |
 | `fixtures/shop.yaml` | The business date, the policy numbers and the policy texts in Romanian and English. Both sets share it. |
 | `fixtures/tuning.yaml` | The orders that tuning cases use. |
-| `fixtures/held-out.yaml` | The orders that held-out cases use. |
+| `fixtures/held-out.yaml` | The orders that validation cases use. |
+| `fixtures/final.yaml` | The orders that final cases use. |
 
 The business date is `2026-11-20`. Every policy window counts from that date, so a result never depends on the day the tests run.
 
@@ -35,7 +37,7 @@ The business date is `2026-11-20`. Every policy window counts from that date, so
 | Field | Rule |
 | --- | --- |
 | `id` | Lowercase letters, digits and hyphens. It equals the file name without `.yaml`, and it starts with the language and a hyphen, such as `ro-`. |
-| `split` | `tuning` or `held-out`. It equals the folder. |
+| `split` | `tuning`, `held-out` or `final`. It equals the folder. |
 | `language` | `ro` or `en`, the language of the first customer turn. |
 | `category` | One of `order-status`, `delivery-change`, `inside-policy`, `outside-policy`, `damage`, `identity`, `injection`, `person-needed`, `shop-question`. |
 | `summary` | Two or three English sentences for the reviewer. Say what happens and why the expected outcome is right. The agent never sees it. |
@@ -109,7 +111,7 @@ When a case names a handover reason, use this table.
 
 | Field | Rule |
 | --- | --- |
-| `order_id` | `SC-` and four digits. Tuning orders use `SC-1000` to `SC-1999`. Held-out orders use `SC-2000` to `SC-2999`. |
+| `order_id` | `SC-` and four digits. Tuning orders use `SC-1000` to `SC-1999`. Held-out orders use `SC-2000` to `SC-2999`. Final orders use `SC-3000` to `SC-3999`. |
 | `email` | Always at `example.com`. |
 | `customer_name` | The invented name of the customer. |
 | `status` | `paid`, `in_production`, `shipped` or `delivered`. |
@@ -129,4 +131,8 @@ Every person, address and title is invented. Every email, in a fixture or in a c
 - Give the order number and the email in the conversation when the case needs a verified customer. Spread them over two turns in some cases, as real customers do.
 - Write Romanian the way customers type it. Many skip diacritics, shorten words and make small typing errors.
 - Keep one need per conversation, except where the case tests a change of topic.
-- A held-out case tests the same policy as a tuning case with different wording, orders and details. Never copy a conversation from one set to the other.
+- A held-out case or a final case tests the same policy as a tuning case with different wording, orders and details. Never copy a conversation from one set to another.
+
+## The three sets
+
+The tuning set is for changing prompts and code. The held-out set is the validation set: its author did not see the tuning set, but the maintainer saw its expected outcomes before changing the policy, so it checks a change and no longer stands as an unseen test. The final set is the one the README quotes. Its author reads this page and [the scope](scope.md), and neither the tuning cases nor the held-out cases. `pnpm score` runs the held-out set, and `pnpm score --set final` runs the final set. `pnpm tune` reaches neither.

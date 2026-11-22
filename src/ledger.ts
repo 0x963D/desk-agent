@@ -4,7 +4,7 @@ import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { z } from "zod";
 import { caseDir, filesIn, unlessMissing } from "./files.ts";
-import type { Split } from "./shapes.ts";
+import { ScoredSet, type Split } from "./shapes.ts";
 import { Summary } from "./summary.ts";
 
 export const LedgerEntry = z.strictObject({
@@ -14,7 +14,8 @@ export const LedgerEntry = z.strictObject({
   commit: z.string(),
   dirty: z.boolean(),
   cases_sha256: z.string(),
-  summary: Summary,
+  // The summary's split is the set the run was scored on.
+  summary: Summary.extend({ split: ScoredSet }),
 });
 export type LedgerEntry = z.infer<typeof LedgerEntry>;
 
