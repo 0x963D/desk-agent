@@ -148,14 +148,12 @@ export const ToolName = z.enum([
 ]);
 export type ToolName = z.infer<typeof ToolName>;
 
-export const ToolCall = z.strictObject({
-  name: ToolName,
-  input: z.unknown(),
-  output: z.discriminatedUnion("ok", [
-    z.strictObject({ ok: z.literal(true), data: z.unknown() }),
-    z.strictObject({ ok: z.literal(false), error: ToolError }),
-  ]),
-});
+export const CallOutput = z.discriminatedUnion("ok", [
+  z.strictObject({ ok: z.literal(true), data: z.unknown() }),
+  z.strictObject({ ok: z.literal(false), error: ToolError }),
+]);
+
+export const ToolCall = z.strictObject({ name: ToolName, input: z.unknown(), output: CallOutput });
 export type ToolCall = z.infer<typeof ToolCall>;
 
 export const Turn = z.discriminatedUnion("role", [

@@ -33,7 +33,7 @@ export async function writeJson<T>(file: string, schema: z.ZodType<T>, value: T)
   await writeFile(file, `${JSON.stringify(parseAs(schema, value, file), null, 2)}\n`);
 }
 
-async function unlessMissing<T, F>(read: Promise<T>, fallback: F): Promise<T | F> {
+export async function unlessMissing<T, F>(read: Promise<T>, fallback: F): Promise<T | F> {
   try {
     return await read;
   } catch (error) {
@@ -57,7 +57,7 @@ export function loadShop(root: string): Promise<Shop> {
   return readYaml(join(root, "fixtures", "shop.yaml"), Shop);
 }
 
-async function loadOrders(root: string, split: Split): Promise<Order[]> {
+export async function loadOrders(root: string, split: Split): Promise<Order[]> {
   const file = orderFile(root, split);
   const text = await unlessMissing(readFile(file, "utf8"), undefined);
   if (text === undefined) return [];

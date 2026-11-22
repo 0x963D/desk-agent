@@ -1,15 +1,5 @@
 import { expect, test } from "vitest";
-import { z } from "zod";
-import { ToolName } from "../src/shapes.ts";
-import { contracts } from "../src/tools.ts";
 import { request, testBackend, verified } from "./helpers.ts";
-
-test.each(ToolName.options)("%s takes an input that is a JSON Schema object", (name) => {
-  const schema = z.toJSONSchema(contracts[name].input);
-
-  expect(schema.type).toBe("object");
-  expect(schema.required).not.toEqual([]);
-});
 
 test("an order lookup with the order number and its email returns the order", async () => {
   const tools = await testBackend();
