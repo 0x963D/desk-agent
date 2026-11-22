@@ -57,7 +57,7 @@ A packet is one folder of conversations to judge. It holds this page, the scope,
 - Each conversation file is named by a random id. It holds the numbered turns, each function call with its input and its result, and the handover if one was made. A function call is listed under the agent turn that made it, before that turn's reply.
 - The conversation stops at a handover, because a person now owns it. Any customer messages left in the script are not shown.
 - The packet does not say which agent wrote a conversation or what outcome its test case expects. Judge each conversation on its own. The same customer script appears more than once.
-- Work alone, and do not read another reader's verdicts.
+- Work alone and from the packet only. Do not look for the conversations anywhere else, and do not read another reader's verdicts.
 
 ## The verdict file
 
