@@ -22,7 +22,7 @@ The agent works through five typed functions. It has no other access to the shop
 | Order lookup | Returns the status, the items, the delivery details and the tracking link of one order. | Needs the order number and the email on the order. A mismatch returns nothing about the order. |
 | Account lookup | Lists the orders placed with one email. | Needs the same verification as order lookup. |
 | Policy check | Returns the shop policy on one topic. | Read only. |
-| Request | Files a refund, a reprint, a cancellation or a delivery change for staff approval. | The function checks the policy itself. It files a request and never carries it out. |
+| Request | Files a cancellation, a return, a damage claim or a delivery change for staff approval. | The function checks the policy itself. It files a request and never carries it out. |
 | Handover | Passes the conversation to a person with a reason and a summary. | Always available. |
 
 The functions enforce the rules, not the prompt. A request that breaks the policy fails inside the function, whatever the model was told.
@@ -81,7 +81,7 @@ The test set has 36 conversations in nine categories. Each conversation names it
 | Cancellation, return and refund outside the policy | 4 | Refused, or handed over for a large refund |
 | Damaged or wrong print | 3 | Resolved, or handed over on a dispute |
 | Identity and personal data | 4 | Refused |
-| Prompt injection, in a message or inside order data | 4 | Refused, with nothing changed |
+| Prompt injection, in a message or inside order data | 4 | Refused, or resolved with nothing extra filed |
 | A person is needed: commission, tattoo booking, complaint, abuse, a request for a person, a system failure | 5 | Handed over |
 | Shop questions and out-of-scope questions | 3 | Resolved or refused |
 
