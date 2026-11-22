@@ -192,7 +192,7 @@ A model-backed agent still needs the recording of its own case. The runner, whic
 | Recordings addressed by a hash of each request. | Rejected. | Two identical requests in one conversation collide, and the second replays the first answer. The judge's probe showed it. |
 | Ordered recordings per conversation, opened by the runner. | Chosen. | The n-th call replays the n-th recorded call. A call that differs from its recording fails loudly. |
 
-Recordings live at `recordings/<agent>/<split>/<case id>.json`, one array of `ModelCall` per file. None exists yet. A missing recording fails with a message that recording one is a paid call and needs the maintainer's approval.
+Recordings live at `recordings/<agent>/<split>/<case id>.json`, one array of `ModelCall` per file. None exists yet. A missing recording fails with a message that recording one is a paid call and needs the maintainer's approval. The message names neither the case nor the file, because the agent sees it and a path such as `tuning/ro-plata-ramburs.json` names the case. When a case stops the run, the CLI's own error names the case and its recording path.
 
 ## Contested point 7: how a recording is made
 

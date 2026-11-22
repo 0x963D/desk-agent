@@ -63,7 +63,7 @@ export function recordedModel(file: string): ModelClient {
   const load = async () => {
     const text = await readFile(file, "utf8").catch(() => {
       throw new Error(
-        `no recording at ${file}. Recording one calls a paid provider and needs the maintainer's approval.`,
+        "no recording for this conversation. Recording one calls a paid provider and needs the maintainer's approval.",
       );
     });
     return replayModel(ModelCall.array().parse(JSON.parse(text)));

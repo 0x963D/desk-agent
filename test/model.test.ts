@@ -128,6 +128,25 @@ test("a missing recording fails and says that recording one is a paid call", asy
   await expect(run(["plan"], recordedModel(file))).rejects.toThrow("needs the maintainer's approval");
 });
 
+test("the error a missing recording gives the agent names neither the case nor the file", async () => {
+  const root = await tempDir();
+  const file = recordingPath(root, "model-backed", "tuning", "ro-plata-ramburs");
+  let seen = "";
+  const agent: Agent = {
+    name: "model-backed",
+    open: ({ model }) => async () => {
+      await model.complete({}).catch((error: unknown) => (seen = String(error)));
+      return { text: "Sorry, something went wrong.", status: "refused" };
+    },
+  };
+
+  await runCase(agent, testCase, await testBackend(), { model: recordedModel(file) });
+
+  expect(seen).toContain("needs the maintainer's approval");
+  expect(seen).not.toMatch(/ro-plata-ramburs|recordings|tuning|model-backed/);
+  expect(seen).not.toContain(root);
+});
+
 test("a model call that differs from its recording fails instead of answering", async () => {
   await expect(run(["plan", "improvise"], replayModel(recording))).rejects.toThrow("does not match its recording");
 });

@@ -74,6 +74,11 @@ async function run(root: string, agent: Agent, split: Split, parent: string, rec
     const recorder = record?.(file);
     const conversation = await runCase(agent, testCase, createBackend({ shop, orders }, { outage: testCase.outage }), {
       model: recorder ?? recordedModel(file),
+    }).catch((error: unknown) => {
+      const why = error instanceof Error ? error.message : String(error);
+      throw new Error(`${split}/${testCase.id} stopped the run: ${why} Its recording path is ${shown(root, file)}.`, {
+        cause: error,
+      });
     });
     await recorder?.save();
     await writeJson(join(dir, "conversations", `${testCase.id}.json`), Conversation, conversation);
