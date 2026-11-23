@@ -2,6 +2,7 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { agreementReport, kappa, parseVerdicts } from "../src/agreement.ts";
+import { agents } from "../src/agents/index.ts";
 import { main } from "../src/cli.ts";
 import { readJson } from "../src/files.ts";
 import { passed } from "../src/grade.ts";
@@ -275,28 +276,33 @@ async function fill(dir: string, file: string, judge: (id: string) => Verdict) {
   await writeFile(file, `${ids.map((id) => JSON.stringify(judge(id))).join("\n")}\n`);
 }
 
-test("the saved model runs build a packet of 324 conversations, and filled verdicts feed the agreement report", async () => {
+test("the saved model runs build a packet of every scored validation conversation, and filled verdicts feed the agreement report", async () => {
   const work = await tempDir();
   const out = join(work, "packet");
   const keyFile = join(work, "key.json");
 
   const printed = await main(["audit-packet", "--out", out, "--key", keyFile, "--seed", "test"], ROOT);
 
-  expect(printed).toContain("packet: 324 conversations from 18 runs");
-  expect(printed).toContain("not reached: 44 conversations stopped at a handover before the script's last customer message");
-  expect((await readdir(join(out, "conversations"))).length).toBe(324);
+  // Every model agent with a scored validation run is in the packet, with all 18 cases of each run.
+  // The counts come from the saved runs, so scoring another agent does not change this test.
+  const key = await readJson(keyFile, AuditKey);
+  const ledger = (await readFile(join(ROOT, "results", "ledger.jsonl"), "utf8")).trim().split("\n")
+    .map((line) => JSON.parse(line) as { agent: string; summary: { split: string } });
+  const scored = new Set(ledger.filter((e) => e.summary.split === "held-out" && agents.get(e.agent)?.liveModel).map((e) => e.agent));
+  const perAgent = Map.groupBy(key.conversations, (c) => c.agent);
+  expect(new Set(perAgent.keys())).toEqual(scored);
+  let runs = 0;
+  for (const list of perAgent.values()) {
+    const agentRuns = new Set(list.map((c) => c.run)).size;
+    expect(list).toHaveLength(18 * agentRuns);
+    runs += agentRuns;
+  }
+  const total = key.conversations.length;
+  expect(printed).toContain(`packet: ${total} conversations from ${runs} runs`);
+  expect(printed).toMatch(/not reached: \d+ conversations stopped at a handover before the script's last customer message/);
+  expect((await readdir(join(out, "conversations"))).length).toBe(total);
   expect(await readFile(join(out, "judging.md"), "utf8")).toBe(await readFile(join(ROOT, "docs", "judging.md"), "utf8"));
   expect(await readFile(join(out, "scope.md"), "utf8")).toBe(await readFile(join(ROOT, "docs", "scope.md"), "utf8"));
-  const key = await readJson(keyFile, AuditKey);
-  const perAgent = Map.groupBy(key.conversations, (c) => c.agent);
-  expect(Object.fromEntries([...perAgent].map(([agent, list]) => [agent, list.length]))).toEqual({
-    "plain-gpt-6-luna": 54,
-    "plain-gpt-6.2-sol": 54,
-    "sdk-gpt-6-luna": 54,
-    "sdk-gpt-6.2-sol": 54,
-    "sdk-claude-haiku-5-5": 54,
-    "sdk-claude-sonnet-5-5": 54,
-  });
 
   const grader = new Map<string, boolean>();
   for (const { id, run, case_id } of key.conversations) {
@@ -304,7 +310,7 @@ test("the saved model runs build a packet of 324 conversations, and filled verdi
     grader.set(id, passed(results.find((r) => r.case_id === case_id)!));
   }
   const failedByGrader = key.conversations.map((c) => c.id).filter((id) => !grader.get(id));
-  expect(failedByGrader).toHaveLength(54);
+  const passing = total - failedByGrader.length;
   await mkdir(join(work, "audit"));
   const lenient = join(work, "audit", "lenient.jsonl");
   const strict = join(work, "audit", "as-grader.jsonl");
@@ -313,21 +319,21 @@ test("the saved model runs build a packet of 324 conversations, and filled verdi
 
   const report = await main(["audit-agreement", "--key", keyFile, lenient, strict], ROOT);
 
-  expect(report).toContain(
-    "reader lenient\n  agent                   acceptable   automatic pass\n" +
-      "  plain-gpt-6-luna             54/54            47/54\n" +
-      "  plain-gpt-6.2-sol            54/54            47/54\n" +
-      "  sdk-claude-haiku-5-5         54/54            38/54\n" +
-      "  sdk-claude-sonnet-5-5        54/54            37/54\n" +
-      "  sdk-gpt-6-luna               54/54            50/54\n" +
-      "  sdk-gpt-6.2-sol              54/54            51/54",
-  );
-  expect(report).toContain("agrees with the automatic grader on 270/324 (83%), kappa 0.00");
-  expect(report).toContain("agrees with the automatic grader on 324/324 (100%), kappa 1.00");
+  const [lenientBlock, strictBlock] = report.split("reader as-grader\n");
+  const names = [...perAgent.keys()].sort();
+  const failedOf = (agent: string) => perAgent.get(agent)!.filter((c) => !grader.get(c.id)).length;
+  for (const agent of names) {
+    const n = perAgent.get(agent)!.length;
+    const pass = n - failedOf(agent);
+    expect(lenientBlock).toMatch(new RegExp(`\n  ${escaped(agent)} +${n}/${n} +${pass}/${n}\n`));
+    expect(strictBlock).toMatch(new RegExp(`\n  ${escaped(agent)} +${pass}/${n} +${pass}/${n}\n`));
+  }
+  expect(report).toMatch(new RegExp(String.raw`agrees with the automatic grader on ${passing}/${total} \(\d+%\), kappa 0\.00`));
+  expect(report).toContain(`agrees with the automatic grader on ${total}/${total} (100%), kappa 1.00`);
   expect(report).toContain("  no criterion failed");
-  expect(report).toContain("  outcome             54                  7                   7                     16                      17                4                 3");
-  expect(report).toContain("readers lenient and as-grader\n  agree on acceptable for 270/324 (83%), kappa 0.00");
-  expect(report).toContain(`disagree on 54: ${failedByGrader.join(", ")}`);
+  expect(report).toMatch(new RegExp(`\n  outcome +${failedByGrader.length} +${names.map(failedOf).join(" +")}\n`));
+  expect(report).toMatch(new RegExp(String.raw`readers lenient and as-grader\n  agree on acceptable for ${passing}/${total} \(\d+%\), kappa 0\.00`));
+  expect(report).toContain(`disagree on ${failedByGrader.length}: ${failedByGrader.join(", ")}`);
 });
 
 test("pnpm audit:agreement takes a verdict file that judges only some conversations only with --partial", async () => {
@@ -341,12 +347,12 @@ test("pnpm audit:agreement takes a verdict file that judges only some conversati
   const some = join(work, "some.jsonl");
   await writeFile(some, `${lines(...ids.slice(0, 3).map((id) => verdict(id)))}\n`);
 
-  await expect(main(["audit-agreement", "--key", keyFile, full, some], ROOT)).rejects.toThrow(/some\.jsonl misses 321 of 324/);
+  await expect(main(["audit-agreement", "--key", keyFile, full, some], ROOT)).rejects.toThrow(`some.jsonl misses ${ids.length - 3} of ${ids.length}`);
   const report = await main(["audit-agreement", "--key", keyFile, "--partial", full, some], ROOT);
 
   expect(report).toContain("reader full\n  agent");
-  expect(report).toContain("reader some, on 3 of 324 conversations\n");
-  expect(report).toContain("readers full and some, on 3 of 324 conversations\n  agree on acceptable for 3/3 (100%)");
+  expect(report).toContain(`reader some, on 3 of ${ids.length} conversations\n`);
+  expect(report).toContain(`readers full and some, on 3 of ${ids.length} conversations\n  agree on acceptable for 3/3 (100%)`);
 });
 
 test("the packet refuses a key inside it, a folder that is not empty and a folder Git tracks", async () => {
@@ -367,3 +373,7 @@ test("the audit options belong to the audit commands", async () => {
   await expect(main(["audit-agreement", "--key", "k.json"], ROOT)).rejects.toThrow(/usage/);
   await expect(main(["report", "--seed", "s"], ROOT)).rejects.toThrow(/usage/);
 });
+
+function escaped(text: string) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}

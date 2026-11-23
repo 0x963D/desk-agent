@@ -168,7 +168,7 @@ test("the sheet reads every conversation the saved model runs put in a packet", 
   await main(["audit-sheet", "--packet", join(work, "packet"), "--ids", join(work, "ids.txt"), "--out", join(work, "all.html")], ROOT);
 
   const html = await readFile(join(work, "all.html"), "utf8");
-  expect(html.match(/<section class="conversation"/g)).toHaveLength(324);
+  expect(html.match(/<section class="conversation"/g)).toHaveLength(ids.length);
 });
 
 type PageAnswer = { acceptable: boolean | null; failing: string[]; note: string };
