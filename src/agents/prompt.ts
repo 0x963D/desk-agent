@@ -53,5 +53,5 @@ Your message is the JSON reply and nothing else. Write no words before it or aro
 
 export const SECOND_VENDOR_PROMPT = {
   name: "tuned",
-  text: SECOND_VENDOR_RULES ? `${SYSTEM_PROMPT}\n\n${SECOND_VENDOR_RULES}` : SYSTEM_PROMPT,
+  text: `${SYSTEM_PROMPT}\n\n${SECOND_VENDOR_RULES}`,
 };
