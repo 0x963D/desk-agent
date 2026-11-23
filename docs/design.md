@@ -515,17 +515,47 @@ Step 14's 13 live runs, the stopped one included, spent $1.90: $0.03 on Luna and
 
 The tuning set no longer separates the agents after fifteen steps of measuring prompt and case changes against these 19 cases. Use the final-set table from `pnpm report` for scores you quote.
 
+#### Tuning the second vendor
+
+The prompt above was tuned on GPT models. On the Claude models the same SDK loop handed over far more often, so `sdk-claude-haiku-5-5-tuned` and `sdk-claude-sonnet-5-5-tuned` run that loop with `SECOND_VENDOR_PROMPT` from `src/agents/prompt.ts`: `SYSTEM_PROMPT` unchanged, followed by rules of their own. `SYSTEM_PROMPT` and the untuned agents stay as they were, so every earlier recording still replays. Rules that come after the shared prompt keep one copy of the policy. A full variant would let the two copies drift. A test holds the tuned prompt to that shape.
+
+The method is the one above, in a checkout without the scored sets. The number is the cases passed per run in `pnpm tune --agent <name>`, three live runs per step for each agent. A step is kept only when its runs clear the spread of the step it builds on. Otherwise it is reverted in full, prompt and recordings. A second number, read from the traces, is the conversations per run with a reflex handover: a `hand_over` call whose summary is under 25 characters, such as `placeholder`, `x` or `Test`.
+
+**Noise.** Step 0 sends `SYSTEM_PROMPT` unchanged under the new names. Haiku passed 15, 17 and 19, and 15, 17 and 16 in three more runs made after step 4. Sonnet passed 13, 12 and 11, and handed over 10 or 11 of 19 conversations. Four of the 19 cases expect a handover. A Sonnet change had to clear 13. A Haiku change had to beat a spread of four cases, which no single cause in its traces is worth.
+
+| Step | Change | Haiku, per run | Sonnet, per run | Sonnet reflex handovers | Verdict |
+| --- | --- | --- | --- | --- | --- |
+| 0 | `SYSTEM_PROMPT` unchanged. | 15, 17, 19, then 15, 17, 16 | 13, 12, 11 | 5, 7, 7 | Reference. |
+| 1 | A function call acts at once and cannot be taken back. Call `hand_over` only for a listed reason with a real summary, never to test it or correct an earlier call. The reply needs no function. | 16, 15, 14 | 13, 13, 12 | 6, 5, 7 | Reverted, inside the spread. |
+| 2 | The message is the JSON reply alone, with no preamble. Call a function only for a fact or an action you need, and answer at once when you have what you need. | 15, 13, 16 | 14, 13, 14 | 1, 2, 3 | Reverted, 13 overlaps step 0. Haiku skipped the handover for a tattoo booking in 2 of 3 runs. |
+| 3 | Step 2 without the sentence about calling functions, plus: a refusal from a function is the answer, so do not hand over after it. | 17, 15, 15 | 12, 13, 12 | 6, 5, 6 | Reverted. The reflex handovers came back, so step 2's effect was in the sentence this step dropped. |
+| 4 | Step 2, plus: a handover is such an action, so when a listed reason holds, call `hand_over` before saying that a colleague will take over. | 16, 15, 14 | 14, 15, 15 | 4, 3, 3 | **Kept.** Sonnet cleared 13 in every run. Haiku stayed inside its spread. |
+| 5 | Step 4, plus: `staff_decision` in two cases only, a function's message that says to hand over or a delivery change after shipping. A rule saying staff must approve a request is no reason to hand over. | 17, 17, 14 | 14, 15, 15 | 6, 2, 3 | Reverted, level with step 4. |
+| 6 | Step 4, plus: for an order that has not shipped, estimate the arrival as the production time plus the delivery time, from the shop rules, and do not hand over. | 15, 16, 16 | 15, 13, 13 | 2, 5, 5 | Reverted. Sonnet fell below step 4. |
+
+**Root causes.** The failing traces of each step were read before the next change.
+
+- Sonnet calls `hand_over` as a reflex. Once it has the facts it needs, its next response is often a lone `hand_over` with a placeholder summary and an arbitrary reason. It then writes the right answer, tells the customer that it passed the chat to a colleague by mistake, and sometimes calls `hand_over` again to correct the first call. It was in 18 of its 21 failing conversations in step 0. Telling it not to do this (step 1) changed nothing. Telling it to call a function only when it needs one and to answer once it has what it needs (steps 2 and 4) halved it. More text about handing over (steps 3, 5 and 6) brought it back.
+- Sonnet hands over after a refusal. When a function refuses a cancellation or a return, it hands over with `staff_decision` or `complaint` and a real summary. The policy text says that staff must approve the refund, and the shared prompt sends to a person whatever "a function tells you a person must decide". Step 5 named the two cases where a person decides. `ro-anulare-in-productie` then passed 3 of 3, against 0 of 3 at step 4, but other failures took its place.
+- Haiku refuses a delivery change after shipping instead of handing it over, in most runs. Step 5 fixed `en-new-address-after-shipping` in 3 of 3 runs, against 0 of 3 at step 4.
+- Haiku does not estimate an arrival. For an order in production it reads only the delivery time, or nothing, says that the system holds no delivery date, and offers a colleague. Step 6 fixed `ro-nota-de-cadou-cu-instructiuni` and `en-when-will-it-arrive` in 3 of 3 runs. `ro-nota-de-cadou-cu-instructiuni` had failed 3 of 3 at step 4.
+- Haiku's other failures move from run to run: a filed request left `open`, an empty reply, a reply in Romanian to an English message, a tracking link left out. Each run has a different two or three of them, and they set its spread.
+
+**Result.** Step 4 raised Sonnet from a mean of 12.0 to 14.7 cases and its handovers from 10.7 to 8.3 of 19 conversations. Haiku went from a mean of 16.5 over six step 0 runs to 15.0, inside its spread. Steps 5 and 6 each fixed the cases their rule was written for and no more cases passed. The tuning stopped there, after six steps, with both agents below the 18 cases per run it aimed for. On the tuning set, the second prompt helps Sonnet and does not help Haiku.
+
+**The frozen agents** use the step 4 prompt at effort `low`. Their committed recordings are the third step 4 run: Haiku 14/19 and Sonnet 15/19. `pnpm replay` reproduces those grades. They have no scored run yet. The 45 live runs, 24 on Haiku and 21 on Sonnet, spent $16.51 by the recorder's count: $0.79 on Haiku and $15.72 on Sonnet.
+
 ## The AI SDK agent
 
 `sdkAgent` in `src/agents/sdk.ts` runs one non-streaming Vercel AI SDK loop on OpenAI and Anthropic. The two GPT entries let a tuning run compare this loop with the plain agent on the same models. The two Claude entries let a tuning run compare providers with the same loop and matching base input and output prices. The pairs are GPT-6 Luna with Claude Haiku 5.5 and GPT-6.2 Sol with Claude Sonnet 5.5.
 
-Both providers use the existing system prompt, five MCP tools, and low reasoning effort. The session runs tool calls in order and sends the results back with the conversation history. Each customer turn allows six tool rounds, followed by a request with tools forbidden. The final reply uses the provider's native structured output.
+Both providers use the existing system prompt, five MCP tools, and low reasoning effort. A `prompt` option sends another prompt and adds its name to the agent's name, which is how the tuned Claude agents get theirs. The session runs tool calls in order and sends the results back with the conversation history. Each customer turn allows six tool rounds, followed by a request with tools forbidden. The final reply uses the provider's native structured output.
 
 Each SDK provider gets a custom `fetch` that hands its JSON request body to the session's `ModelClient` and returns the client's response body to the SDK. The same recorder, replay client, and spend guard cover both providers. Replay compares each body in call order, including any IDs and reasoning blocks carried forward from saved responses. Tests record and replay fresh sessions on both providers to check that request bodies match byte for byte.
 
 The OpenAI live client uses `OPENAI_API_KEY`. The Anthropic live client uses `ANTHROPIC_API_KEY` and prices the Messages API's ordinary input, cache reads, five-minute cache writes, and output separately. The Haiku price table covers prompts through 100,000 total input tokens, including cache reads and writes. [Anthropic pricing](https://platform.claude.com/docs/en/about-claude/pricing)
 
-`pnpm replay` runs the rule-based agent and every registered model agent with a directory under `recordings/`. A model agent with an absent directory is skipped. A present directory requires a recording for every tuning case. Directories that belong to no registered model agent fail the command. Each of the four SDK agents has a recording for every tuning case and three scored runs on each scored set. The README reports their results.
+`pnpm replay` runs the rule-based agent and every registered model agent with a directory under `recordings/`. A model agent with an absent directory is skipped. A present directory requires a recording for every tuning case. Directories that belong to no registered model agent fail the command. Each of the four untuned SDK agents has a recording for every tuning case and three scored runs on each scored set. The README reports their results. The two tuned Claude agents, described under [Tuning the second vendor](#tuning-the-second-vendor), have tuning recordings and no scored run.
 
 ## Talking to the agent
 
