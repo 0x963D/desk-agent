@@ -15,6 +15,10 @@ type Model =
   | { provider: "openai"; model: OpenAIModel }
   | { provider: "anthropic"; model: AnthropicModel };
 
+// A prompt other than SYSTEM_PROMPT. Its name goes after the model in the agent's name, so each
+// prompt gets its own recordings and runs.
+export type NamedPrompt = { name: string; text: string };
+
 const reply = Output.object({
   name: "agent_reply",
   schema: z.strictObject({
@@ -59,9 +63,10 @@ function checkHeaders(provider: Model["provider"], init: RequestInit | undefined
 const Arguments = z.looseObject({});
 const invalid = (message: string) => ({ ok: false, error: { code: "invalid_input", message } });
 
-export function sdkAgent({ provider, model }: Model): Agent {
+export function sdkAgent({ provider, model, prompt }: Model & { prompt?: NamedPrompt }): Agent {
+  const instructions = prompt?.text ?? SYSTEM_PROMPT;
   return {
-    name: `sdk-${model}`,
+    name: prompt ? `sdk-${model}-${prompt.name}` : `sdk-${model}`,
     liveModel: () => provider === "openai" ? openaiModel(model) : anthropicModel(model),
     open({ tools, model: client }) {
       // Only the live client authenticates. This fetch never sends an HTTP request.
@@ -79,11 +84,11 @@ export function sdkAgent({ provider, model }: Model): Agent {
             model: createOpenAI(options).responses(model),
             // The SDK asks for a detailed reasoning summary by default. The plain agent asks for none,
             // so null keeps the two loops' requests alike and the summary's output tokens unbilled.
-            providerOptions: { openai: { instructions: SYSTEM_PROMPT, reasoningEffort: "low", reasoningSummary: null, store: false } },
+            providerOptions: { openai: { instructions, reasoningEffort: "low", reasoningSummary: null, store: false } },
           }
         : {
             model: createAnthropic(options)(model),
-            instructions: SYSTEM_PROMPT,
+            instructions,
             providerOptions: { anthropic: { effort: "low", structuredOutputMode: "outputFormat" } },
           };
       const messages: ModelMessage[] = [];

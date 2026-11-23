@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { MAX_ROUNDS } from "../src/agents/plain.ts";
-import { SYSTEM_PROMPT } from "../src/agents/prompt.ts";
+import { SECOND_VENDOR_PROMPT, SYSTEM_PROMPT } from "../src/agents/prompt.ts";
 import { sdkAgent } from "../src/agents/sdk.ts";
 import { toolDefinitions } from "../src/mcp.ts";
 import { recordedModel, recordModel, type ModelClient } from "../src/model.ts";
@@ -89,6 +89,23 @@ test.each(models)("$model uses low effort, native structured output and the shop
   expect(toolResults(requests[1]!)).toEqual([
     { ok: true, data: expect.objectContaining({ order_id: "SC-1003" }) },
   ]);
+});
+
+test.each(models)("$model with a named prompt sends that prompt and takes its name", async (config) => {
+  const agent = sdkAgent({ ...config, prompt: { name: "tuned", text: "Answer briefly." } });
+  const { client, requests } = fakeModel(replyResponse(config, "Hello.", "resolved"));
+
+  await runCase(agent, caseExpecting({ outcome: "resolved" }), await testBackend(), { model: client });
+
+  expect(agent.name).toBe(`sdk-${config.model}-tuned`);
+  expect(sdkAgent(config).name).toBe(`sdk-${config.model}`);
+  expect(requests[0]).toMatchObject(config.provider === "openai"
+    ? { instructions: "Answer briefly." }
+    : { system: [{ type: "text", text: "Answer briefly." }] });
+});
+
+test("the second vendor's prompt is the shared prompt with its own rules after it", () => {
+  expect(SECOND_VENDOR_PROMPT.text.startsWith(SYSTEM_PROMPT)).toBe(true);
 });
 
 test.each([models[0], models[2]])("$model forbids tools after the round limit and resets it on the next turn", async (config) => {

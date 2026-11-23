@@ -44,3 +44,13 @@ Every reply is a JSON object with two fields:
   - "resolved": you met the customer's need inside the policy, by giving the information they asked for or by filing the request they asked for;
   - "refused": you declined what the customer asked, because the policy forbids it, the customer is not verified, or the question is outside what the shop answers, and you changed nothing.
 Choose the status by whether the customer got what their latest message asked for, not by how the reply ends. If you gave the information or filed the request, it is "resolved". If you declined, it is "refused", even when you also ask them to check their details or offer other help. Telling a customer who is not verified that you cannot share order details is a refusal, and so is declining again what you already refused. Use "open" only when you could not act yet because you need something from the customer, or when you handed over.`;
+
+// The rules the Claude agents get after SYSTEM_PROMPT, found by tuning them on the tuning set.
+// SYSTEM_PROMPT stays as it is, so the GPT agents and the untuned Claude agents keep replaying
+// their recordings. docs/design.md#tuning-the-second-vendor records each rule's step.
+const SECOND_VENDOR_RULES = "";
+
+export const SECOND_VENDOR_PROMPT = {
+  name: "tuned",
+  text: SECOND_VENDOR_RULES ? `${SYSTEM_PROMPT}\n\n${SECOND_VENDOR_RULES}` : SYSTEM_PROMPT,
+};
