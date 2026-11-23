@@ -275,16 +275,16 @@ async function fill(dir: string, file: string, judge: (id: string) => Verdict) {
   await writeFile(file, `${ids.map((id) => JSON.stringify(judge(id))).join("\n")}\n`);
 }
 
-test("the saved model runs build a packet of 108 conversations, and filled verdicts feed the agreement report", async () => {
+test("the saved model runs build a packet of 324 conversations, and filled verdicts feed the agreement report", async () => {
   const work = await tempDir();
   const out = join(work, "packet");
   const keyFile = join(work, "key.json");
 
   const printed = await main(["audit-packet", "--out", out, "--key", keyFile, "--seed", "test"], ROOT);
 
-  expect(printed).toContain("packet: 108 conversations from 6 runs");
-  expect(printed).toContain("not reached: 14 conversations stopped at a handover before the script's last customer message");
-  expect((await readdir(join(out, "conversations"))).length).toBe(108);
+  expect(printed).toContain("packet: 324 conversations from 18 runs");
+  expect(printed).toContain("not reached: 44 conversations stopped at a handover before the script's last customer message");
+  expect((await readdir(join(out, "conversations"))).length).toBe(324);
   expect(await readFile(join(out, "judging.md"), "utf8")).toBe(await readFile(join(ROOT, "docs", "judging.md"), "utf8"));
   expect(await readFile(join(out, "scope.md"), "utf8")).toBe(await readFile(join(ROOT, "docs", "scope.md"), "utf8"));
   const key = await readJson(keyFile, AuditKey);
@@ -292,6 +292,10 @@ test("the saved model runs build a packet of 108 conversations, and filled verdi
   expect(Object.fromEntries([...perAgent].map(([agent, list]) => [agent, list.length]))).toEqual({
     "plain-gpt-6-luna": 54,
     "plain-gpt-6.2-sol": 54,
+    "sdk-gpt-6-luna": 54,
+    "sdk-gpt-6.2-sol": 54,
+    "sdk-claude-haiku-5-5": 54,
+    "sdk-claude-sonnet-5-5": 54,
   });
 
   const grader = new Map<string, boolean>();
@@ -300,7 +304,7 @@ test("the saved model runs build a packet of 108 conversations, and filled verdi
     grader.set(id, passed(results.find((r) => r.case_id === case_id)!));
   }
   const failedByGrader = key.conversations.map((c) => c.id).filter((id) => !grader.get(id));
-  expect(failedByGrader).toHaveLength(14);
+  expect(failedByGrader).toHaveLength(54);
   await mkdir(join(work, "audit"));
   const lenient = join(work, "audit", "lenient.jsonl");
   const strict = join(work, "audit", "as-grader.jsonl");
@@ -309,13 +313,21 @@ test("the saved model runs build a packet of 108 conversations, and filled verdi
 
   const report = await main(["audit-agreement", "--key", keyFile, lenient, strict], ROOT);
 
-  expect(report).toContain("reader lenient\n  agent               acceptable   automatic pass\n  plain-gpt-6-luna         54/54            47/54\n  plain-gpt-6.2-sol        54/54            47/54");
-  expect(report).toContain("agrees with the automatic grader on 94/108 (87%), kappa 0.00");
-  expect(report).toContain("agrees with the automatic grader on 108/108 (100%), kappa 1.00");
+  expect(report).toContain(
+    "reader lenient\n  agent                   acceptable   automatic pass\n" +
+      "  plain-gpt-6-luna             54/54            47/54\n" +
+      "  plain-gpt-6.2-sol            54/54            47/54\n" +
+      "  sdk-claude-haiku-5-5         54/54            38/54\n" +
+      "  sdk-claude-sonnet-5-5        54/54            37/54\n" +
+      "  sdk-gpt-6-luna               54/54            50/54\n" +
+      "  sdk-gpt-6.2-sol              54/54            51/54",
+  );
+  expect(report).toContain("agrees with the automatic grader on 270/324 (83%), kappa 0.00");
+  expect(report).toContain("agrees with the automatic grader on 324/324 (100%), kappa 1.00");
   expect(report).toContain("  no criterion failed");
-  expect(report).toContain("  outcome             14                  7                   7");
-  expect(report).toContain("readers lenient and as-grader\n  agree on acceptable for 94/108 (87%), kappa 0.00");
-  expect(report).toContain(`disagree on 14: ${failedByGrader.join(", ")}`);
+  expect(report).toContain("  outcome             54                  7                   7                     16                      17                4                 3");
+  expect(report).toContain("readers lenient and as-grader\n  agree on acceptable for 270/324 (83%), kappa 0.00");
+  expect(report).toContain(`disagree on 54: ${failedByGrader.join(", ")}`);
 });
 
 test("pnpm audit:agreement takes a verdict file that judges only some conversations only with --partial", async () => {
@@ -329,12 +341,12 @@ test("pnpm audit:agreement takes a verdict file that judges only some conversati
   const some = join(work, "some.jsonl");
   await writeFile(some, `${lines(...ids.slice(0, 3).map((id) => verdict(id)))}\n`);
 
-  await expect(main(["audit-agreement", "--key", keyFile, full, some], ROOT)).rejects.toThrow(/some\.jsonl misses 105 of 108/);
+  await expect(main(["audit-agreement", "--key", keyFile, full, some], ROOT)).rejects.toThrow(/some\.jsonl misses 321 of 324/);
   const report = await main(["audit-agreement", "--key", keyFile, "--partial", full, some], ROOT);
 
   expect(report).toContain("reader full\n  agent");
-  expect(report).toContain("reader some, on 3 of 108 conversations\n");
-  expect(report).toContain("readers full and some, on 3 of 108 conversations\n  agree on acceptable for 3/3 (100%)");
+  expect(report).toContain("reader some, on 3 of 324 conversations\n");
+  expect(report).toContain("readers full and some, on 3 of 324 conversations\n  agree on acceptable for 3/3 (100%)");
 });
 
 test("the packet refuses a key inside it, a folder that is not empty and a folder Git tracks", async () => {

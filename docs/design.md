@@ -525,7 +525,7 @@ Each SDK provider gets a custom `fetch` that hands its JSON request body to the 
 
 The OpenAI live client uses `OPENAI_API_KEY`. The Anthropic live client uses `ANTHROPIC_API_KEY` and prices the Messages API's ordinary input, cache reads, five-minute cache writes, and output separately. The Haiku price table covers prompts through 100,000 total input tokens, including cache reads and writes. [Anthropic pricing](https://platform.claude.com/docs/en/about-claude/pricing)
 
-`pnpm replay` runs the rule-based agent and every registered model agent with a directory under `recordings/`. A model agent with an absent directory is skipped. A present directory requires a recording for every tuning case. Directories that belong to no registered model agent fail the command. The four SDK agents start without recordings.
+`pnpm replay` runs the rule-based agent and every registered model agent with a directory under `recordings/`. A model agent with an absent directory is skipped. A present directory requires a recording for every tuning case. Directories that belong to no registered model agent fail the command. Each of the four SDK agents has a recording for every tuning case and three scored runs on each scored set. The README reports their results.
 
 ## Talking to the agent
 
