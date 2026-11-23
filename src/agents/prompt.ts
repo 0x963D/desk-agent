@@ -48,7 +48,8 @@ Choose the status by whether the customer got what their latest message asked fo
 // The rules the Claude agents get after SYSTEM_PROMPT, found by tuning them on the tuning set.
 // SYSTEM_PROMPT stays as it is, so the GPT agents and the untuned Claude agents keep replaying
 // their recordings. docs/design.md#tuning-the-second-vendor records each rule's step.
-const SECOND_VENDOR_RULES = "";
+const SECOND_VENDOR_RULES = `# Only the reply
+Your message is the JSON reply and nothing else. Write no words before it or around it: no preamble, no plan, no note that you are about to answer. Call a function only for a fact or an action you need. A handover is such an action: when a reason under "Hand over to a person" holds, call hand_over before you tell the customer that a colleague will take over. When you have what you need, answer at once with the JSON reply.`;
 
 export const SECOND_VENDOR_PROMPT = {
   name: "tuned",
