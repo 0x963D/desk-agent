@@ -116,7 +116,7 @@ These are the weak spots, stated before a reader finds them.
 - **The language check passes what it cannot read.** A short reply or a mixed one counts as unsure and never fails.
 - **No function amends a filed request,** and an order shows no earlier claim, so a wish the customer adds after a claim is filed needs a person.
 - **Log redaction is by pattern.** It masks emails, phone, card and IBAN numbers and street addresses, but not names.
-- **The agent framework comparison is not done.** Plain function calling was chosen because it keeps the recorded requests plain JSON, not because it beat a framework on a measured run.
+- **The agent framework comparison is not done.** Plain function calling was chosen because it keeps the recorded requests plain JSON, not because it beat a framework on a measured run. The `sdk-*` agents run one AI SDK loop on two GPT models and two price-matched Claude models, recorded at the wire like the plain agent, but none has recordings or scores yet.
 
 ## Run it
 
@@ -124,7 +124,7 @@ With Docker Engine and Docker Compose running, from a fresh clone:
 
 	docker compose run --rm check
 
-Building the image downloads Node and the dependencies. The check itself runs with no network and needs no key. It typechecks, runs the 286 tests, replays the tuning set for every agent from its recordings, prints the report as a plain-text table with the same numbers as the table above, and checks that the README's table matches the report. `pnpm report --markdown` prints it in the README's format. CI runs the same steps on every pull request and every push to `main`.
+Building the image downloads Node and the dependencies. The check itself runs with no network and needs no key. It typechecks, runs the tests, replays the tuning set for the rule-based agent and every model agent with a recordings directory, prints the report as a plain-text table with the same numbers as the table above, and checks that the README's table matches the report. `pnpm report --markdown` prints it in the README's format. CI runs the same steps on every pull request and every push to `main`.
 
 Without Docker, with Node 24.3 or later and pnpm 11.18.0:
 

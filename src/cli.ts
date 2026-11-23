@@ -1,4 +1,4 @@
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readdir, readFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { parseArgs } from "node:util";
@@ -8,7 +8,7 @@ import { createBackend } from "./backend.ts";
 import { auditAgreement } from "./agreement.ts";
 import { chat, type ChatOutput } from "./chat.ts";
 import { envFile } from "./env.ts";
-import { caseDir, filesIn, loadSplit, readConversations, runName, writeJson } from "./files.ts";
+import { caseDir, loadSplit, readConversations, runName, unlessMissing, writeJson } from "./files.ts";
 import { grade, passed } from "./grade.ts";
 import {
   appendLedger,
@@ -25,7 +25,7 @@ import {
   writeLedgerCode,
   type LedgerEntry,
 } from "./ledger.ts";
-import { recordedModel, recordingDir, recordingPath, recordModel, type Recorder } from "./model.ts";
+import { recordedModel, recordingPath, recordModel, type Recorder } from "./model.ts";
 import { writePacket } from "./packet.ts";
 import { README_END, README_START, readmeTable, REPORTED_SETS, reportTable, runsTable, type ReportRow } from "./report.ts";
 import { runCase } from "./runner.ts";
@@ -142,12 +142,16 @@ async function tune(root: string, agent: Agent, record?: (file: string) => Recor
 }
 
 async function replay(root: string): Promise<string> {
+  const entries = await unlessMissing(readdir(join(root, "recordings"), { withFileTypes: true }), []);
+  const recorded = new Set(entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name));
+  for (const name of recorded) {
+    if (!agents.get(name)?.liveModel) throw new Error(`recordings/${name} has no registered model agent`);
+  }
   const reports: string[] = [];
   for (const agent of agents.values()) {
-    const recordings = recordingDir(root, agent.name, "tuning");
-    if (agent.liveModel && (await filesIn(recordings, ".json")).length === 0) {
+    if (agent.liveModel && !recorded.has(agent.name)) {
       reports.push(
-        `agent: ${agent.name}\nskipped: ${shown(root, recordings)} holds no recordings, so its tuning set cannot be replayed offline. Recording one calls a paid provider and needs the maintainer's approval.`,
+        `agent: ${agent.name}\nskipped: recordings/${agent.name} is missing. Recording its tuning set calls a paid provider and needs the maintainer's approval.`,
       );
       continue;
     }
