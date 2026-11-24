@@ -8,6 +8,7 @@ import { openSession } from "./runner.ts";
 import { ChatLog, type ToolCall } from "./shapes.ts";
 import { spendCap, spendFile, spendGuard } from "./spend.ts";
 import { dollars, milliseconds } from "./summary.ts";
+import type { Tools } from "./tools.ts";
 
 // Where the customer's messages come from: a person typing, or a tuning case and its recording.
 export type ChatSource =
@@ -100,7 +101,16 @@ export async function chat(root: string, agent: Agent, source: ChatSource, out: 
     note("Write as the customer. An empty line is skipped. End the input to finish.");
   }
 
-  const session = await openSession(agent, createBackend({ shop, orders }, { outage }), model && { model });
+  // Names are collected as each function answers, so a turn that fails after a lookup has them too.
+  const backend = createBackend({ shop, orders }, { outage });
+  const watched: Tools = {
+    async call(name, input) {
+      const result = await backend.call(name, input);
+      if (result.ok) customerNames(result.data, names);
+      return result;
+    },
+  };
+  const session = await openSession(agent, watched, model && { model });
   const file = join(root, "traces", "chat", agent.name, `${runName()}.json`);
   const started_at = new Date().toISOString();
   const save = () =>
@@ -119,7 +129,6 @@ export async function chat(root: string, agent: Agent, source: ChatSource, out: 
       if (text === "") continue;
       if (echo) out.conversation(indented("customer", text));
       const turn = await session.say(text);
-      for (const call of turn.tool_calls) if (call.output.ok) customerNames(call.output.data, names);
       await save();
       for (const call of turn.tool_calls) note(callLine(call, [...names]));
       out.conversation(indented("agent", turn.text));

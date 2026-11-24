@@ -146,6 +146,20 @@ test("a customer name a function returned is masked in every note and in the log
   expect(conversation).toContain("agent     You are Jonas Weber.");
 });
 
+test("a turn that fails after a lookup keeps the name it returned out of the error", async () => {
+  const failing: Agent = {
+    name: "failing",
+    open: ({ tools }) => async () => {
+      const answer = await tools.call("lookup_order", { order_id: "SC-1003", email: TYPED.email });
+      throw new Error(`could not greet ${answer.ok ? answer.data.customer_name : "nobody"}`);
+    },
+  };
+
+  const stopped = chat(await testRepo(), failing, live("Unde e comanda?"), recorder().output);
+
+  await expect(stopped).rejects.toThrow("the chat stopped: could not greet [name]");
+});
+
 // Records the plain agent on one tuning case of the test repository against a scripted provider,
 // which looks the order up and then replies, so the replay below needs no committed recording.
 async function recordScripted(root: string, agent: Agent, id: string) {
