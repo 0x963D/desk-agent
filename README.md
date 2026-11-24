@@ -15,13 +15,13 @@ flowchart LR
     customer["Customer<br/>(scripted case or pnpm chat)"] --> session["Session<br/>one message at a time"]
     session --> agent["Agent<br/>plain function calling"]
     agent <--> model["Model<br/>live, or replayed from recordings/"]
-    agent -- "tools/call" --> mcp["MCP server<br/>five typed functions"]
+    agent -- "tools/call" --> mcp["MCP server<br/>six typed functions"]
     mcp --> shop["Shop backend<br/>checks identity and policy"]
     session -- "scored runs" --> trace["Trace"] --> grader["Grader"] --> ledger["Ledger and report"]
 ```
 
-- **Five functions, behind a real MCP server:** order lookup, account lookup, policy check, file a request for staff approval, and hand over to a person. The functions enforce the policy and the identity check themselves. A request the policy forbids fails inside the function, whatever the model was told.
-- **The agent** is about 120 lines of plain function calling, plus a 46-line system prompt, with no agent framework, on two models from one vendor: a cheaper one (`plain-gpt-6-luna`) and a stronger one (`plain-gpt-6.2-sol`). Both use the same code and the same prompt. The prompt says how to behave and holds no shop facts, which come from the functions.
+- **Six functions, behind a real MCP server:** order lookup, account lookup, policy check, file a request for staff approval, amend a pending request, and hand over to a person. The functions enforce the policy and the identity check themselves. A request the policy forbids fails inside the function, whatever the model was told.
+- **The agent** is about 120 lines of plain function calling, plus a 47-line system prompt, with no agent framework, on two models from one vendor: a cheaper one (`plain-gpt-6-luna`) and a stronger one (`plain-gpt-6.2-sol`). Both use the same code and the same prompt. The prompt says how to behave and holds no shop facts, which come from the functions.
 - **A comparison loop** (`sdk-*`) runs the same prompt and functions through the AI SDK. It runs on the two GPT models and on two Claude models at the same prices, so the framework and the vendor can each be measured. The `-tuned` Claude agents add one section, tuned for them, to the end of the shared prompt.
 - **The runner** plays each case through the same session and MCP path a live chat uses. **The grader** checks the outcome, the requests on file, exact phrases and the reply language. The requests and any handover come from the accepted function calls in the trace. Only the choice between resolved and refused comes from the status the agent declares with each reply.
 - **The ledger** records every scoring run with its commit and a hash of its cases and its code. **The report** grades every saved run again and refuses to print a number that no longer matches its ledger line.
@@ -30,13 +30,13 @@ flowchart LR
 
 ## How it was measured
 
-There are 55 conversations in three sets. Each set was written by a different author, each a language model working from the scope. The tuning and validation sets each cover every category of [the test plan](docs/scope.md#test-plan).
+There are three sets. Each set is written by a different author, each a language model working from the scope. The tuning set covers every category of [the test plan](docs/scope.md#test-plan).
 
 | Set | Conversations | Used for |
 | --- | ---: | --- |
-| Tuning, `cases/tuning/` | 19 | Changing the prompt and the code. |
-| Validation, `cases/held-out/` | 18 | Checking a change after tuning. Its expected outcomes reached the person who later changed the policy, so it is not an unseen test. |
-| Final, `cases/final/` | 18 | Scoring only. 11 Romanian and 7 English. Its author saw neither other set, and nobody who tuned the agent has read it. |
+| Tuning, `cases/tuning/` | 37 | Changing the prompt and the code. It holds the first tuning set and the former validation set, whose expected outcomes reached the person who later changed the policy. |
+| Validation, `cases/held-out/` | 18 | Checking a change after tuning. It is the former final set, 11 Romanian and 7 English. Its author saw neither other set, and nobody who tuned the agent has read it, but its scores were published. |
+| Final, `cases/final/` | none yet | Scoring only. A new author writes it from the scope, and nobody who tunes the agent reads it. |
 
 Every model agent ran each scored set three times from a clean tree. One run moves by a case or two, so the tables report the total, the share and the lowest and highest count in one run.
 
@@ -108,7 +108,7 @@ Validation set, cases/held-out. Each row covers every scored run of one agent wi
 | --- | --- |
 | The functions enforce the policy and the identity check, not the prompt. | 0 wrong actions in 864 scored model conversations, on two vendors, two loops and two prompts. The baseline's forbidden attempts, 3 on the final set and 2 on the validation set, were refused by the functions and changed nothing. |
 | Define a complaint and a dispute in the scope instead of tuning the prompt around them. | All 12 tuning failures of the stronger model at that point were handovers marked as complaints. After the scope said what a complaint is, it passed 18 to 19 of 19. |
-| Check the reply language with two word lists instead of a model or a package. | It read 42 of 44 tuning customer turns right, none wrong and 2 as unsure, and an unsure reading never fails a case. |
+| Check the reply language with two word lists instead of a model or a package. | It reads 66 of the 75 tuning customer turns right, none wrong and 9 as unsure, and an unsure reading never fails a case. |
 | Score three runs per agent and report the spread. | One run moves by one or two cases. A single run cannot show a change worth one case. |
 | Quote the final set, not the tuning set. | Both models pass 19 of 19 tuning conversations in every run, so that set no longer tells them apart. The same agents pass 87% of the validation set. |
 | Regrade every saved run in the report, and check the README against it in `pnpm check`. | A grader change that moves a published number stops the report with the field and both values. |
@@ -126,12 +126,12 @@ These are the weak spots, stated before a reader finds them.
 - **The sets are small.** One final conversation is 5.6 points of one run. Three runs narrow the noise but do not remove it.
 - **The final set may be easier than the validation set.** The keyword baseline passes 10 of 18 final conversations and 4 of 18 validation conversations.
 - **"Test set first" means before the model agent.** The keyword baseline existed before the cases. One tuning expectation changed after review, and one tuning case was repaired after a policy correction made it unpassable. [FAILURES.md](FAILURES.md) records both.
-- **The validation set is not an unseen test.** The person who changed the complaint policy had seen its expected outcomes, which is why the final set exists.
+- **The validation set has been scored before.** It was the final set until the sets moved, so its numbers were published, though nobody who tuned the agent has read it. The set that had been validation moved into tuning, because the person who changed the complaint policy had seen its expected outcomes.
 - **The second vendor had one short climb.** It took six steps on the tuning set, and one step was kept. The tuned Claude agents add one section to the shared prompt. The smaller model's runs vary more than any single fix was worth, so its rows show what a short climb gets, not what that family can do.
 - **Text only.** The model takes about 2.2 to 2.5 s per turn in the median and about 5 s at the 95th percentile. That leaves out tool time. It is workable for chat and too slow for a voice line.
 - **The language check passes what it cannot read.** A short reply or a mixed one counts as unsure and never fails.
-- **No function amends a filed request,** and an order shows no earlier claim, so a wish the customer adds after a claim is filed needs a person.
-- **Log redaction is by pattern.** It masks emails, phone, card and IBAN numbers and street addresses, but not names.
+- **A request can be amended only in the conversation that filed it.** An order shows no earlier claim, so a wish the customer adds in a later conversation needs a person.
+- **Log redaction is by pattern and by the names the functions returned.** It masks emails, phone, card and IBAN numbers, street addresses and each customer name a function returned in the chat. A name the customer only types, such as a friend's, stays.
 - **The framework comparison covers one framework.** The `sdk-*` agents run one AI SDK loop, recorded at the wire like the plain agent. Other frameworks were not measured. The blind readers read only the plain agents.
 
 ## Run it
@@ -147,7 +147,7 @@ Without Docker, with Node 24.3 or later and pnpm 11.18.0:
 	pnpm install --frozen-lockfile
 	pnpm check                                                     # the same steps as the container
 	pnpm chat --agent plain-gpt-6-luna --replay ro-unde-e-coletul  # watch one tuning conversation, offline
-	pnpm mcp                                                       # serve the five functions over stdio
+	pnpm mcp                                                       # serve the six functions over stdio
 
 Live runs, recording and scoring call a paid provider and need a key in `.env`. [The verification skill](.agents/skills/verify-desk-agent/SKILL.md) lists every command, what it proves and its fences.
 
@@ -158,7 +158,7 @@ Live runs, recording and scoring call a paid provider and need a key in `.env`. 
 | `docs/scope.md` | The client, the policy, the outcomes, the wrong actions and the test plan. |
 | `docs/design.md` | Every design choice with its alternatives, the tuning steps, and the full list of limits. |
 | `docs/judging.md` | The rubric a reader applies to one conversation. |
-| `src/` | About 3,300 lines of TypeScript: shapes, functions, MCP server, agents, runner, grader, report, audit tools. |
+| `src/` | About 3,750 lines of TypeScript: shapes, functions, MCP server, agents, runner, grader, report, audit tools. |
 | `cases/`, `fixtures/` | The three sets and their orders. |
 | `recordings/` | The last tuning run of each model agent, replayed offline. |
 | `results/` | Every scoring run, the ledger, and the failure reviews. |

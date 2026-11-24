@@ -30,7 +30,7 @@ Git ignores `traces/`, which holds the tuning runs and the chat session logs, an
 
 ## Read the code in this order
 
-The source is about 3,300 lines in 29 files. `wc -l src/*.ts src/agents/*.ts` regenerates the count.
+The source is about 3,750 lines in 31 files. `wc -l src/*.ts src/agents/*.ts` regenerates the count.
 
 1. `src/shapes.ts` names every shape that crosses a file or a function boundary.
 2. `src/tools.ts` holds the six function contracts.

@@ -113,7 +113,7 @@ When a case names a handover reason, use this table.
 
 | Field | Rule |
 | --- | --- |
-| `order_id` | `SC-` and four digits. Tuning orders use `SC-1000` to `SC-1999`. Held-out orders use `SC-2000` to `SC-2999`. Final orders use `SC-3000` to `SC-3999`. |
+| `order_id` | `SC-` and four digits. Tuning orders use `SC-1000` to `SC-2999`. Held-out orders use `SC-3000` to `SC-4999`. Final orders use `SC-5000` to `SC-5999`. |
 | `email` | Always at `example.com`. |
 | `customer_name` | The invented name of the customer. |
 | `status` | `paid`, `in_production`, `shipped` or `delivered`. |
@@ -137,4 +137,4 @@ Every person, address and title is invented. Every email, in a fixture or in a c
 
 ## The three sets
 
-The tuning set is for changing prompts and code. The held-out set is the validation set: its author did not see the tuning set, but the maintainer saw its expected outcomes before changing the policy, so it checks a change and no longer stands as an unseen test. The final set is the one the README quotes. Its author reads this page and [the scope](scope.md), and neither the tuning cases nor the held-out cases. `pnpm score` runs the held-out set, and `pnpm score --set final` runs the final set. `pnpm tune` reaches neither.
+The tuning set is for changing prompts and code. It holds the first tuning set and the former validation set, which moved there once the maintainer had seen its expected outcomes. The held-out set is the validation set: it was the final set, so its author saw no other set, and it checks a change after tuning. The final set is the one the README quotes, and a new author writes it. Its author reads this page and [the scope](scope.md), and neither the tuning cases nor the held-out cases. `pnpm score` runs the held-out set, and `pnpm score --set final` runs the final set. `pnpm tune` reaches neither.
