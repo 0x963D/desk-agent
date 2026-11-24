@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import { loadOrders, loadShop } from "../src/files.ts";
 import { redact, redacted } from "../src/redact.ts";
+import { Turn } from "../src/shapes.ts";
 import { ROOT } from "./helpers.ts";
 
 test.each([
@@ -72,10 +73,22 @@ test.each([
 });
 
 test.each([
-  ["a longer word that starts with the name", "Irinaaa and Paveliu"],
-  ["a name that was not given", "Toma Ilie"],
-])("%s stays when names are given", (_, text) => {
-  expect(redact(text, ["Irina Pavel"])).toBe(text);
+  ["a name typed decomposed", "Ștefan wrote".normalize("NFD"), ["Ștefan Pop"], "[name] wrote"],
+  ["a name returned decomposed", "Ștefan wrote", ["Ștefan Pop".normalize("NFD")], "[name] wrote"],
+  ["a name typed with a cedilla where the order has a comma below", "Şerban wrote", ["Șerban Pop"], "[name] wrote"],
+  ["two parts of a longer name, joined by a hyphen", "Ana-Maria wrote", ["Ana Maria Pop"], "[name] wrote"],
+  ["two parts of a longer name, in the order they come", "Ana Maria wrote", ["Ana Maria Pop"], "[name] wrote"],
+])("%s is masked", (_, text, names, masked) => {
+  expect(redact(text, names)).toBe(masked);
+});
+
+test.each([
+  ["a longer word that starts with the name", "Irinaaa and Paveliu", ["Irina Pavel"]],
+  ["a name that was not given", "Toma Ilie", ["Irina Pavel"]],
+  ["an order number that starts with a part of the name", "Comanda SC-1004 si sc-1005", ["Ion Sc"]],
+  ["a city joined by a hyphen to a part of the name", "Str. Exemplu 12, Cluj-Napoca", ["Ana Napoca"]],
+])("%s stays when names are given", (_, text, names) => {
+  expect(redact(text, names)).toBe(text.replace("Str. Exemplu 12", "[address]"));
 });
 
 test("redact masks no name unless it is given one", () => {
@@ -98,4 +111,31 @@ test("redacted masks every string in a value and leaves the value itself alone",
     emails: ["[email]"],
   });
   expect(value).toEqual(before);
+});
+
+test("redacted keeps a closed field whose value is also a customer's name, and masks the name in free text", () => {
+  const turn = {
+    role: "agent",
+    text: "Open, your print is on its way.",
+    status: "open",
+    tool_calls: [
+      {
+        name: "lookup_order",
+        input: { order_id: "SC-1004", email: "ion.open@example.com" },
+        output: { ok: true, data: { customer_name: "Ion Open", status: "paid", items: [{ title: "Open sky", kind: "open" }] } },
+      },
+    ],
+    duration_ms: 1,
+    cost_usd: 0,
+  };
+
+  const masked = redacted(turn, ["Ion Open"]);
+
+  expect(Turn.parse(masked)).toMatchObject({ status: "open", text: "[name], your print is on its way." });
+  expect(masked.tool_calls[0]!.output.data).toEqual({
+    customer_name: "[name]",
+    status: "paid",
+    items: [{ title: "[name] sky", kind: "open" }],
+  });
+  expect(redacted({ status: "Ion Open" }, ["Ion Open"])).toEqual({ status: "[name]" });
 });

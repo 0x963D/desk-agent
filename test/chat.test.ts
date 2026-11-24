@@ -146,6 +146,26 @@ test("a customer name a function returned is masked in every note and in the log
   expect(conversation).toContain("agent     You are Jonas Weber.");
 });
 
+test("a surname that is also a status leaves the saved log valid", async () => {
+  const root = await testRepo();
+  const file = join(root, "fixtures", "tuning.yaml");
+  const fixtures = parseYaml(await readFile(file, "utf8")) as { orders: { order_id: string; customer_name: string }[] };
+  fixtures.orders.find((o) => o.order_id === "SC-1003")!.customer_name = "Jonas Open";
+  await writeFile(file, stringifyYaml(fixtures));
+  const asks: Agent = {
+    name: "asks",
+    open: ({ tools }) => async () => {
+      await tools.call("lookup_order", { order_id: "SC-1003", email: TYPED.email });
+      return { text: "Open, what would you like to change?", status: "open" };
+    },
+  };
+
+  await chat(root, asks, live("Unde e comanda?"), recorder().output);
+
+  const { log } = await onlyLog(root, "asks");
+  expect(log.turns.at(-1)).toMatchObject({ status: "open", text: "[name], what would you like to change?" });
+});
+
 test("a turn that fails after a lookup keeps the name it returned out of the error", async () => {
   const failing: Agent = {
     name: "failing",

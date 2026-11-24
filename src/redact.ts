@@ -48,24 +48,27 @@ function maskDigits(run: string): string {
   return digits <= 19 ? "[card]" : "[number]";
 }
 
-// A letter of a name also matches the same letter without its diacritic, because customers often
-// type Romanian without them: `Ștefan` matches `stefan`.
-const letter = (char: string) => {
-  const escaped = char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const base = char.normalize("NFD").replace(/\p{M}/gu, "");
-  return base === char ? escaped : `[${escaped}${base}]`;
-};
-const spelled = (word: string) => [...word].map(letter).join("");
+// A name is matched on the decomposed text, and each of its letters stands for the base letter with
+// any marks, so `stefan`, `Ștefan` typed decomposed and `Şerban` with a cedilla all match. A name
+// is a whole word: no letter, digit or mark touches it, nor a hyphen that joins it to one, so `Sc`
+// stays inside `SC-1004` and `Napoca` inside `Cluj-Napoca`.
+const NAME_START = String.raw`(?<![\p{L}\p{N}\p{M}_])(?<![\p{L}\p{N}\p{M}_]-)`;
+const NAME_END = String.raw`(?![\p{L}\p{N}\p{M}_])(?!-[\p{L}\p{N}])`;
+const escaped = (char: string) => char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const spelled = (word: string) =>
+  [...word.normalize("NFD").replace(/\p{M}/gu, "")].map((char) => String.raw`${escaped(char)}\p{M}*`).join("");
 
-// Each full name, then each of its parts of two letters or more, longest first, so `Irina Pavel`
-// becomes one `[name]` and `Irina` alone becomes another. Case and diacritics do not matter.
+// Each run of a name's parts of two letters or more, longest first, so `Irina Pavel` becomes one
+// `[name]`, `Irina` alone another, and `Ana-Maria` of `Ana Maria Pop` a third. Case does not matter.
 function namePattern(names: readonly string[]): RegExp | undefined {
-  const words = names.flatMap((name) => {
-    const parts = name.trim().split(/[\s-]+/u).filter((part) => [...part].length >= 2);
-    return [parts.map(spelled).join(String.raw`[\s-]+`), ...parts.map(spelled)];
+  const runs = names.flatMap((name) => {
+    const parts = name.trim().split(/[\s-]+/u).filter((part) => [...part].length >= 2).map(spelled);
+    return parts.flatMap((_, from) =>
+      parts.slice(from).map((_, length) => parts.slice(from, from + length + 1).join(String.raw`[\s-]+`)),
+    );
   });
-  const unique = [...new Set(words.filter((word) => word !== ""))].sort((a, b) => b.length - a.length);
-  return unique.length === 0 ? undefined : new RegExp(`${START}(?:${unique.join("|")})${END}`, "giu");
+  const unique = [...new Set(runs)].sort((a, b) => b.length - a.length);
+  return unique.length === 0 ? undefined : new RegExp(`${NAME_START}(?:${unique.join("|")})${NAME_END}`, "giu");
 }
 
 export function redact(text: string, names: readonly string[] = []): string {
@@ -77,16 +80,24 @@ export function redact(text: string, names: readonly string[] = []): string {
     .replace(COMPOUND, "[address]")
     .replace(NUMBERS, maskDigits);
   const pattern = namePattern(names);
-  return pattern ? masked.replace(pattern, "[name]") : masked;
+  return pattern ? masked.normalize("NFD").replace(pattern, "[name]").normalize("NFC") : masked;
 }
+
+// Fields that hold an id or a value from a closed list, never free text. A name is not masked in
+// them, so a surname such as `Open` leaves the status `open` as it is and the log stays valid. A
+// value of another shape there is masked as usual, in case a malformed call put text in it.
+const CLOSED_FIELDS = new Set(["role", "status", "kind", "remedy", "topic", "reason", "code", "country"]);
+const CLOSED_VALUE = /^(?:[a-z]+(?:_[a-z]+)*|[A-Z]{2})$/u;
 
 // A copy of the value with every string in it passed through `redact`. The value is not changed.
 export function redacted<T>(value: T, names: readonly string[] = []): T {
-  const walk = (node: unknown): unknown => {
-    if (typeof node === "string") return redact(node, names);
-    if (Array.isArray(node)) return node.map(walk);
+  const walk = (node: unknown, key?: string): unknown => {
+    if (typeof node === "string") {
+      return key !== undefined && CLOSED_FIELDS.has(key) && CLOSED_VALUE.test(node) ? node : redact(node, names);
+    }
+    if (Array.isArray(node)) return node.map((child) => walk(child));
     if (node !== null && typeof node === "object") {
-      return Object.fromEntries(Object.entries(node).map(([key, child]) => [key, walk(child)]));
+      return Object.fromEntries(Object.entries(node).map(([key, child]) => [key, walk(child, key)]));
     }
     return node;
   };
