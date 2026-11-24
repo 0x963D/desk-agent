@@ -38,20 +38,22 @@ There are three sets. Each set is written by a different author, each a language
 | Validation, `cases/held-out/` | 18 | Checking a change after tuning. It is the former final set, 11 Romanian and 7 English. Its author saw neither other set, and nobody who tuned the agent has read it, but its scores were published. |
 | Final, `cases/final/` | none yet | Scoring only. A new author writes it from the scope, and nobody who tunes the agent reads it. |
 
-Every model agent ran each scored set three times from a clean tree. One run moves by a case or two, so the tables report the total, the share and the lowest and highest count in one run.
+In the earlier runs, every model agent ran each scored set three times from a clean tree. One run moves by a case or two, so the tables report the total, the share and the lowest and highest count in one run.
 
 ## Results
 
-On the final set, by the automatic grader:
+These scores come from runs on the earlier sets, before the sets moved, and use the names those sets had then. The earlier final set is today's validation set. The earlier validation set and the earlier 19-conversation tuning set are today's tuning set. Every agent is scored again on the current sets before these numbers are replaced.
+
+On the earlier final set, by the automatic grader:
 
 - **The cheaper model passed 52 of 54 conversations (17 to 18 per run), and the stronger one 51 of 54 (17 per run).** The keyword baseline passed 10 of 18.
 - **No model agent took a wrong action the grader can detect, and none tried a forbidden request,** in 108 final conversations or 108 validation conversations. The grader cannot see a false promise. Neither blind reader below found one on the final set.
 - **The stronger model costs about 70 times as much per conversation** ($0.0147 against $0.0002), with a median model time per turn of 2.2 s against 2.45 s.
-- On the validation set both models passed 47 of 54.
+- On the earlier validation set both models passed 47 of 54.
 
 The grader cannot see a false promise, a fact with no source or a handover made too early. Two readers judged all 108 final conversations against [a rubric](docs/judging.md) without knowing which agent wrote each one. Each conversation showed any customer messages that a handover cut off, so a reader could judge an early handover. Both are language models from vendors other than the agents' vendor.
 
-| Acceptable on the final set | Cheaper model | Stronger model |
+| Acceptable on the earlier final set | Cheaper model | Stronger model |
 | --- | ---: | ---: |
 | Automatic grader (passed every check) | 52/54 | 51/54 |
 | Blind reader G (Grok 4.7) | 40/54 | 48/54 |
@@ -64,7 +66,7 @@ The grader cannot see a false promise, a fact with no source or a handover made 
 
 `pnpm audit:agreement --key results/audit/final/key.json results/audit/final/reader-g.jsonl results/audit/final/reader-m.jsonl` reproduces these numbers from the committed verdicts.
 
-**On these numbers, the stronger model is the one to ship.** It costs about 1.5 cents a conversation. Each failure the readers find on the cheaper model is visible to the customer, and each one has to be fixed and measured on the tuning set before the cheaper model is worth its saving.
+**On these earlier numbers, the stronger model is the one to ship.** It costs about 1.5 cents a conversation. Each failure the readers find on the cheaper model is visible to the customer, and each one has to be fixed and measured on the tuning set before the cheaper model is worth its saving.
 
 [The final failure review](results/final-failures.md) traces every failure the grader found to its root cause. [The validation review](results/held-out-failures.md) does the same for the validation set. Tuning is recorded step by step in [the design](docs/design.md#tuning), and [FAILURES.md](FAILURES.md) covers the tuning set.
 
@@ -104,6 +106,8 @@ Validation set, cases/held-out. Each row covers every scored run of one agent wi
 
 ## Decisions and the numbers behind them
 
+The scores in this table come from the earlier runs that [the results](#results) describe, on the sets as they were then. The language check alone is measured on today's tuning set.
+
 | Decision | What measured it |
 | --- | --- |
 | The functions enforce the policy and the identity check, not the prompt. | 0 wrong actions in 864 scored model conversations, on two vendors, two loops and two prompts. The baseline's forbidden attempts, 3 on the final set and 2 on the validation set, were refused by the functions and changed nothing. |
@@ -123,8 +127,8 @@ Validation set, cases/held-out. Each row covers every scored run of one agent wi
 These are the weak spots, stated before a reader finds them.
 
 - **The conversations are synthetic and scripted.** Language models wrote them from the scope. A scripted customer cannot react to what the agent says.
-- **The sets are small.** One final conversation is 5.6 points of one run. Three runs narrow the noise but do not remove it.
-- **The final set may be easier than the validation set.** The keyword baseline passes 10 of 18 final conversations and 4 of 18 validation conversations.
+- **The sets are small.** One conversation of an 18-conversation set is 5.6 points of one run. Three runs narrow the noise but do not remove it.
+- **The validation set may be easier than the cases that moved into tuning.** Before the sets moved, the keyword baseline passed 10 of its 18 conversations and 4 of the 18 that moved.
 - **"Test set first" means before the model agent.** The keyword baseline existed before the cases. One tuning expectation changed after review, and one tuning case was repaired after a policy correction made it unpassable. [FAILURES.md](FAILURES.md) records both.
 - **The validation set has been scored before.** It was the final set until the sets moved, so its numbers were published, though nobody who tuned the agent has read it. The set that had been validation moved into tuning, because the person who changed the complaint policy had seen its expected outcomes.
 - **The second vendor had one short climb.** It took six steps on the tuning set, and one step was kept. The tuned Claude agents add one section to the shared prompt. The smaller model's runs vary more than any single fix was worth, so its rows show what a short climb gets, not what that family can do.
