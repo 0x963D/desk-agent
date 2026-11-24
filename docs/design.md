@@ -563,6 +563,42 @@ The GPT prompt had fifteen steps on the first tuning set and the Claude rules si
 - **Stop.** A vendor stops when each of its agents passes at least 40 of 42 in every run of its last kept step, after 15 steps, or after 4 reverted steps in a row, whichever comes first.
 - **The frozen agent** uses the last kept step. Its committed recordings are that step's third run.
 
+##### GPT
+
+**Noise.** Step 0 sends `SYSTEM_PROMPT` alone at effort `low`. It was measured twice: first on the tuning set as it stood, then again after the case `ro-retur-si-intrebare-comision` was found faulty. Its second message asked about a commission, which the policy sends to a person, yet the case expected the return to be filed. Sol handed over there in all three runs and Luna in one, and both were right. The case was rewritten as `ro-retur-si-intrebare-livrare`, whose middle question asks about delivery to another EU country. Step 0 and step 1 as first measured are below, labelled as before the case fix.
+
+| Step | Change | Luna, per run | Sol, per run | Verdict |
+| --- | --- | --- | --- | --- |
+| 0, before the case fix | `SYSTEM_PROMPT` alone, effort `low`. | 39, 39, 41 | 39, 39, 39 | Reference. |
+| 1, before the case fix | A GPT section: a no to a cancellation, a return, a damage claim or a delivery change, or to whether one is still possible, is `refused`, even when asked as a question or said again. A lookup that matches no order is `refused`. | 40, 38, 39 | 41, 40, 41 | Reverted. Luna's 38 is below the lowest step 0 run. |
+| 0, after the case fix | `SYSTEM_PROMPT` alone, effort `low`, measured again. | 41, 40, 40 | 41, 42, 40 | Reference. Every run of both agents passes at least 40, so the climb stops here. |
+
+**Root causes.** The failing traces of each run were read before the next change.
+
+- Sol labels a decline by the form of the customer's message, not by what the customer got. Asked "is it cancelled or not?" or "can I still return it?", it answers no and declares `resolved`. After a lookup that matches no order, it asks the customer to check both details and declares `open`. These were 5 of Sol's 9 failures before the case fix and 2 of its 3 after it. Step 1 removed them on Sol, which then failed only the faulty case in two runs.
+- Step 1's rule spilled beyond declines. Luna declared `refused` for an answer that the shop takes cards only, a shop question the scope resolves, in 2 of 3 runs. Sol refused a delivery change after shipping instead of handing it over in 1 of 3.
+- Luna replies in Romanian to an English message once function results in Romanian are in its context. `ro-anulare-comanda-platita`, where the customer switches to English to give the email, failed on language in all 9 Luna runs. Two English cases failed the same way in one run each.
+- Single failures that did not repeat: Luna told a customer that colleagues would take over without calling `hand_over`, handed over a commissioned-work return instead of refusing it, handed over a framing question as a system failure, and once forgot an order number given in the first message. Sol asked for a postal code instead of filing a delivery change, and once added a sentence to the new address it filed.
+
+**Result.** On the repaired tuning set the starting prompt already meets the stop condition. Luna passes 41, 40 and 40, and Sol 41, 42 and 40. No step was kept, so the GPT agents send `SYSTEM_PROMPT` alone at effort `low`, as before the second climb. Step 1 is the rule that a further climb would start from, without its spillovers. It cannot be kept under this rule, because Sol's step 0 reached 42 and so cannot be beaten, and Luna would need 42 in all three runs while the language failure above holds.
+
+**The frozen agents** use the step 0 prompt. The committed recordings of `plain-gpt-6-luna` and `plain-gpt-6.2-sol` are the third step 0 run after the case fix: Luna 40/42 and Sol 40/42. `sdk-gpt-6-luna` and `sdk-gpt-6.2-sol` each have one recorded run on the same prompt: Luna 39/42, failing three cases on language, and Sol 41/42, failing the repeated cancellation refusal above. `pnpm replay` reproduces all four grades.
+
+| Agent | Run | Passed | Resolved correctly | Handed over | Wrong actions | Blocked attempts | Median turn | 95th percentile | Cost per conversation |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `plain-gpt-6-luna` | step 0 again, 1 | 41/42 | 20/42 | 10/42 | 0 | 1 | 2,117 ms | 4,289 ms | $0.0003 |
+| `plain-gpt-6-luna` | step 0 again, 2 | 40/42 | 20/42 | 9/42 | 0 | 1 | 2,103 ms | 4,414 ms | $0.0002 |
+| `plain-gpt-6-luna` | step 0 again, 3, committed | 40/42 | 20/42 | 11/42 | 0 | 1 | 2,116 ms | 4,161 ms | $0.0002 |
+| `plain-gpt-6.2-sol` | step 0 again, 1 | 41/42 | 20/42 | 10/42 | 1 | 3 | 3,383 ms | 7,134 ms | $0.0166 |
+| `plain-gpt-6.2-sol` | step 0 again, 2 | 42/42 | 21/42 | 10/42 | 0 | 2 | 3,277 ms | 6,949 ms | $0.0162 |
+| `plain-gpt-6.2-sol` | step 0 again, 3, committed | 40/42 | 21/42 | 10/42 | 0 | 3 | 3,256 ms | 6,775 ms | $0.0163 |
+| `sdk-gpt-6-luna` | 1, committed | 39/42 | 20/42 | 10/42 | 0 | 1 | 2,262 ms | 3,949 ms | $0.0003 |
+| `sdk-gpt-6.2-sol` | 1, committed | 41/42 | 21/42 | 10/42 | 0 | 2 | 3,262 ms | 7,140 ms | $0.0159 |
+
+Turn times are nearest-rank, from model time only. Sol's wrong action in its first run is the delivery change filed with a sentence added to the new address.
+
+**Spend.** The 20 live runs spent $7.04 by the recorder's count: $0.11 on Luna and $6.93 on Sol. The 18 plain runs spent $6.36, $0.10 on Luna and $6.26 on Sol, and the two framework runs $0.68. No screen of single requests was run, because the stop condition was met before a second step was written. Every run was made one after another in one checkout.
+
 ## The AI SDK agent
 
 `sdkAgent` in `src/agents/sdk.ts` runs one non-streaming Vercel AI SDK loop on OpenAI and Anthropic. The two GPT entries let a tuning run compare this loop with the plain agent on the same models. The two Claude entries let a tuning run compare providers with the same loop and matching base input and output prices. The pairs are GPT-6 Luna with Claude Haiku 5.5 and GPT-6.2 Sol with Claude Sonnet 5.5.
