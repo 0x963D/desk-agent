@@ -1,6 +1,6 @@
 // Masks the personal data a customer types or a function returns, so it never reaches a log or a
 // terminal line outside the conversation. Order numbers, statuses, dates and prices stay, because
-// support staff follow a log by them.
+// support staff follow a log by them. A name has no pattern, so the caller passes the names to mask.
 
 // No letter or digit may touch a match.
 const START = String.raw`(?<![\p{L}\p{N}_])`;
@@ -48,20 +48,42 @@ function maskDigits(run: string): string {
   return digits <= 19 ? "[card]" : "[number]";
 }
 
-export function redact(text: string): string {
-  return text
+// A letter of a name also matches the same letter without its diacritic, because customers often
+// type Romanian without them: `Ștefan` matches `stefan`.
+const letter = (char: string) => {
+  const escaped = char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const base = char.normalize("NFD").replace(/\p{M}/gu, "");
+  return base === char ? escaped : `[${escaped}${base}]`;
+};
+const spelled = (word: string) => [...word].map(letter).join("");
+
+// Each full name, then each of its parts of two letters or more, longest first, so `Irina Pavel`
+// becomes one `[name]` and `Irina` alone becomes another. Case and diacritics do not matter.
+function namePattern(names: readonly string[]): RegExp | undefined {
+  const words = names.flatMap((name) => {
+    const parts = name.trim().split(/[\s-]+/u).filter((part) => [...part].length >= 2);
+    return [parts.map(spelled).join(String.raw`[\s-]+`), ...parts.map(spelled)];
+  });
+  const unique = [...new Set(words.filter((word) => word !== ""))].sort((a, b) => b.length - a.length);
+  return unique.length === 0 ? undefined : new RegExp(`${START}(?:${unique.join("|")})${END}`, "giu");
+}
+
+export function redact(text: string, names: readonly string[] = []): string {
+  const masked = text
     .replace(EMAIL, "[email]")
     .replace(IBAN, maskIban)
     .replace(STREET_FIRST, "[address]")
     .replace(NUMBER_FIRST, "[address]")
     .replace(COMPOUND, "[address]")
     .replace(NUMBERS, maskDigits);
+  const pattern = namePattern(names);
+  return pattern ? masked.replace(pattern, "[name]") : masked;
 }
 
 // A copy of the value with every string in it passed through `redact`. The value is not changed.
-export function redacted<T>(value: T): T {
+export function redacted<T>(value: T, names: readonly string[] = []): T {
   const walk = (node: unknown): unknown => {
-    if (typeof node === "string") return redact(node);
+    if (typeof node === "string") return redact(node, names);
     if (Array.isArray(node)) return node.map(walk);
     if (node !== null && typeof node === "object") {
       return Object.fromEntries(Object.entries(node).map(([key, child]) => [key, walk(child)]));

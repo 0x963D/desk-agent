@@ -18,7 +18,7 @@ Run from the checkout root. The product is a CLI, `node src/cli.ts` behind the p
 - Never run `pnpm score` without the maintainer's approval. It runs the held-out set, the validation set, and appends a line to `results/ledger.jsonl`, and the report counts every line as one more use of that set. `pnpm score --set final` runs the final set, the one the README quotes, and needs the same approval.
 - Never pass `--record` to any command without the maintainer's approval and a cost estimate. It calls a paid provider.
 - Never run `pnpm chat` with a model agent and without `--replay` unless the maintainer approved a cost and a cap. It calls the paid provider on every reply. Set `SPEND_CAP_USD` to that cap for the run. A session of four turns on `plain-gpt-6-luna` cost $0.0006.
-- Never commit `traces/chat/`. A session log is masked by pattern, and a pattern misses some personal data, such as a name.
+- Never commit `traces/chat/`. A session log is masked by pattern and by the customer names the functions returned, and both miss some personal data, such as a name the customer typed that no function returned.
 - Never open `cases/held-out/`, `cases/final/`, `fixtures/held-out.yaml` or `fixtures/final.yaml` to improve an agent, and never copy a held-out or final case's text, order or id into a prompt or a rule. The commands below may load them through the loader. Tune on `cases/tuning/` only, in the tuner's checkout below.
 - Never edit `results/` or `recordings/` by hand. A committed run and a committed recording are evidence.
 
@@ -55,7 +55,7 @@ A pattern with a slash inside it is anchored at the root, so `test/fixtures/case
 Pick the commands by what the change touches.
 
 - `src/grade.ts`, `src/trace.ts`, `src/summary.ts` or a held-out case: run `pnpm test`, then `pnpm report`. When the report stops with `no longer agrees with its line in results/ledger.jsonl`, the change moves a published number. Stop and tell the maintainer, who decides whether to score again. Never edit the ledger to make it agree.
-- `src/redact.ts` or `src/chat.ts`: run `pnpm test`, then `pnpm chat --agent plain-gpt-6-luna --replay ro-adresa-veche-inainte-de-expediere` and read the session log it names. No email, phone number, card number, IBAN or street may appear in it, and the order number must.
+- `src/redact.ts` or `src/chat.ts`: run `pnpm test`, then `pnpm chat --agent plain-gpt-6-luna --replay ro-adresa-veche-inainte-de-expediere` and read the session log it names. No email, phone number, card number, IBAN, street or customer name may appear in it, and the order number must.
 - `README.md`, `results/` or anything that moves a reported number: run `pnpm report --check-readme`.
 - `src/packet.ts`, `src/sheet.ts`, `src/sheet-page.*`, `docs/judging.md` or `docs/scope.md`: run `pnpm test`, then build a packet and a sheet into a folder outside the repository with the audit commands above, and open the sheet.
 - An agent, its prompt or a tuning case: run `pnpm tune --agent <name>` on the replay. When the replay fails with `does not match its recording`, the requests changed, and only a new recording, which needs approval, can prove the change.

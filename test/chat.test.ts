@@ -116,6 +116,36 @@ test("personal data a customer typed or a function returned never reaches the se
   expect(conversation.join("\n")).toContain(TYPED.card);
 });
 
+// Looks the order up on its first turn and repeats what it found on the second.
+const lookup: Agent = {
+  name: "lookup",
+  open: ({ tools }) => {
+    let found = "";
+    return async () => {
+      if (found !== "") return { text: `You are ${found}.`, status: "resolved" };
+      const answer = await tools.call("lookup_order", { order_id: "SC-1003", email: TYPED.email });
+      found = answer.ok ? answer.data.customer_name : "nobody";
+      return { text: "Found it.", status: "resolved" };
+    };
+  },
+};
+
+test("a customer name a function returned is masked in every note and in the log, and a name only typed is not", async () => {
+  const root = await testRepo();
+  const { output, conversation, notes } = recorder();
+  const first = `Sunt jonas WEBER, comanda SC-1003, mailul ${TYPED.email}. Coletul e pentru Toma Ilie.`;
+
+  await chat(root, lookup, live(first, "Cine sunt?"), output);
+
+  const { text } = await onlyLog(root, "lookup");
+  for (const written of [text, ...notes]) expect(written).not.toMatch(/jonas|weber/i);
+  expect(text).toContain("Sunt [name], comanda SC-1003");
+  expect(text).toContain("You are [name].");
+  expect(text).toContain("Toma Ilie");
+  expect(notes.some((line) => line.includes('"customer_name":"[name]"'))).toBe(true);
+  expect(conversation).toContain("agent     You are Jonas Weber.");
+});
+
 // Records the plain agent on one tuning case of the test repository against a scripted provider,
 // which looks the order up and then replies, so the replay below needs no committed recording.
 async function recordScripted(root: string, agent: Agent, id: string) {

@@ -212,7 +212,8 @@ export const Conversation = z.strictObject({
 export type Conversation = z.infer<typeof Conversation>;
 
 // The log of one `pnpm chat` session, saved under traces/chat/. Every string in its turns has
-// passed through `redact`, so it holds no email, phone number, card number, IBAN or street.
+// passed through `redact`, so it holds no email, phone number, card number, IBAN or street, and no
+// customer name that a function returned in the chat.
 export const ChatLog = z.strictObject({
   conversation_id: z.string(),
   agent: z.string(),

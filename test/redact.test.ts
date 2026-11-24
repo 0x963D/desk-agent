@@ -61,6 +61,27 @@ test("every delivery address in the tuning orders is masked", async () => {
   }
 });
 
+test.each([
+  ["the full name", "Order for Irina Pavel.", "Order for [name]."],
+  ["each part alone, in any case", "irina wrote, then PAVEL", "[name] wrote, then [name]"],
+  ["a full name split by more spaces", "Irina   Pavel", "[name]"],
+  ["a name typed without its diacritics", "stefan ionescu-popa and Popa", "[name] and [name]"],
+  ["a name inside an email, which goes as the email", "irina.pavel@example.com", "[email]"],
+])("a name given to redact is masked as %s", (_, text, masked) => {
+  expect(redact(text, ["Irina Pavel", "Ștefan Ionescu-Popa"])).toBe(masked);
+});
+
+test.each([
+  ["a longer word that starts with the name", "Irinaaa and Paveliu"],
+  ["a name that was not given", "Toma Ilie"],
+])("%s stays when names are given", (_, text) => {
+  expect(redact(text, ["Irina Pavel"])).toBe(text);
+});
+
+test("redact masks no name unless it is given one", () => {
+  expect(redact("Irina Pavel")).toBe("Irina Pavel");
+});
+
 test("redacted masks every string in a value and leaves the value itself alone", () => {
   const value = {
     order_id: "SC-1003",
