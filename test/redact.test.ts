@@ -78,6 +78,9 @@ test.each([
   ["a name typed with a cedilla where the order has a comma below", "Şerban wrote", ["Șerban Pop"], "[name] wrote"],
   ["two parts of a longer name, joined by a hyphen", "Ana-Maria wrote", ["Ana Maria Pop"], "[name] wrote"],
   ["two parts of a longer name, in the order they come", "Ana Maria wrote", ["Ana Maria Pop"], "[name] wrote"],
+  ["a part joined by a hyphen to another name", "Maria-Irina wrote", ["Irina Pavel"], "Maria-[name] wrote"],
+  ["a name with a Romanian article after a hyphen", "comanda Pavel-ului", ["Irina Pavel"], "comanda [name]-ului"],
+  ["a part of the name in a city joined by a hyphen", "Cluj-Napoca", ["Ana Napoca"], "Cluj-[name]"],
 ])("%s is masked", (_, text, names, masked) => {
   expect(redact(text, names)).toBe(masked);
 });
@@ -86,9 +89,8 @@ test.each([
   ["a longer word that starts with the name", "Irinaaa and Paveliu", ["Irina Pavel"]],
   ["a name that was not given", "Toma Ilie", ["Irina Pavel"]],
   ["an order number that starts with a part of the name", "Comanda SC-1004 si sc-1005", ["Ion Sc"]],
-  ["a city joined by a hyphen to a part of the name", "Str. Exemplu 12, Cluj-Napoca", ["Ana Napoca"]],
 ])("%s stays when names are given", (_, text, names) => {
-  expect(redact(text, names)).toBe(text.replace("Str. Exemplu 12", "[address]"));
+  expect(redact(text, names)).toBe(text);
 });
 
 test("redact masks no name unless it is given one", () => {
@@ -138,4 +140,10 @@ test("redacted keeps a closed field whose value is also a customer's name, and m
     items: [{ title: "[name] sky", kind: "open" }],
   });
   expect(redacted({ status: "Ion Open" }, ["Ion Open"])).toEqual({ status: "[name]" });
+});
+
+test("redacted masks a name in a closed field whose value is not in that field's list", () => {
+  const value = { items: [{ kind: "pavel" }], reason: "irina", status: "open" };
+
+  expect(redacted(value, ["Irina Pavel", "Ion Open"])).toEqual({ items: [{ kind: "[name]" }], reason: "[name]", status: "open" });
 });

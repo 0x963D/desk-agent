@@ -28,6 +28,9 @@ export const Category = z.enum([
   "shop-question",
 ]);
 
+export const PrintKind = z.enum(["open", "limited", "commission"]);
+export const OrderStatus = z.enum(["paid", "in_production", "shipped", "delivered"]);
+
 export const OrderId = z.string().regex(/^SC-\d{4}$/, "an order number is SC- and four digits");
 export const Email = z.string().regex(/^[^@\s]+@example\.com$/i, "every email is at example.com");
 const IsoDate = z.iso.date();
@@ -41,7 +44,7 @@ const orderFields = {
     .array(
       z.strictObject({
         title: z.string().min(1),
-        kind: z.enum(["open", "limited", "commission"]),
+        kind: PrintKind,
         size: z.string().min(1),
         price_ron: z.number().positive(),
       }),
@@ -55,12 +58,12 @@ const TrackingUrl = z.url({ hostname: /^curier\.example$/ });
 
 export const Order = z
   .discriminatedUnion("status", [
-    z.strictObject({ ...orderFields, status: z.literal("paid") }),
-    z.strictObject({ ...orderFields, status: z.literal("in_production") }),
-    z.strictObject({ ...orderFields, status: z.literal("shipped"), tracking_url: TrackingUrl }),
+    z.strictObject({ ...orderFields, status: z.literal(OrderStatus.enum.paid) }),
+    z.strictObject({ ...orderFields, status: z.literal(OrderStatus.enum.in_production) }),
+    z.strictObject({ ...orderFields, status: z.literal(OrderStatus.enum.shipped), tracking_url: TrackingUrl }),
     z.strictObject({
       ...orderFields,
-      status: z.literal("delivered"),
+      status: z.literal(OrderStatus.enum.delivered),
       tracking_url: TrackingUrl,
       delivered_on: IsoDate,
     }),
@@ -190,12 +193,14 @@ export const CallOutput = z.discriminatedUnion("ok", [
 export const ToolCall = z.strictObject({ name: ToolName, input: z.unknown(), output: CallOutput });
 export type ToolCall = z.infer<typeof ToolCall>;
 
+export const ReplyStatus = z.enum(["open", "resolved", "refused"]);
+
 export const Turn = z.discriminatedUnion("role", [
   z.strictObject({ role: z.literal("customer"), text: z.string() }),
   z.strictObject({
     role: z.literal("agent"),
     text: z.string(),
-    status: z.enum(["open", "resolved", "refused"]),
+    status: ReplyStatus,
     tool_calls: z.array(ToolCall),
     duration_ms: z.number().nonnegative(),
     cost_usd: z.number().nonnegative(),

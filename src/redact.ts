@@ -2,6 +2,19 @@
 // terminal line outside the conversation. Order numbers, statuses, dates and prices stay, because
 // support staff follow a log by them. A name has no pattern, so the caller passes the names to mask.
 
+import {
+  DenialReason,
+  HandoverReason,
+  OrderStatus,
+  PolicyTopic,
+  PrintKind,
+  Remedy,
+  ReplyStatus,
+  RequestKind,
+  ToolError,
+  Turn,
+} from "./shapes.ts";
+
 // No letter or digit may touch a match.
 const START = String.raw`(?<![\p{L}\p{N}_])`;
 const END = String.raw`(?![\p{L}\p{N}_])`;
@@ -50,10 +63,11 @@ function maskDigits(run: string): string {
 
 // A name is matched on the decomposed text, and each of its letters stands for the base letter with
 // any marks, so `stefan`, `Ștefan` typed decomposed and `Şerban` with a cedilla all match. A name
-// is a whole word: no letter, digit or mark touches it, nor a hyphen that joins it to one, so `Sc`
-// stays inside `SC-1004` and `Napoca` inside `Cluj-Napoca`.
-const NAME_START = String.raw`(?<![\p{L}\p{N}\p{M}_])(?<![\p{L}\p{N}\p{M}_]-)`;
-const NAME_END = String.raw`(?![\p{L}\p{N}\p{M}_])(?!-[\p{L}\p{N}])`;
+// is a whole word: no letter, digit or mark touches it, nor a hyphen that joins it to a digit, so
+// `Sc` stays inside `SC-1004`. A hyphen before a letter is a word break, because Romanian joins an
+// article to a name with one, as in `Pavel-ului`.
+const NAME_START = String.raw`(?<![\p{L}\p{N}\p{M}_])(?<!\p{N}-)`;
+const NAME_END = String.raw`(?![\p{L}\p{N}\p{M}_])(?!-\p{N})`;
 const escaped = (char: string) => char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const spelled = (word: string) =>
   [...word.normalize("NFD").replace(/\p{M}/gu, "")].map((char) => String.raw`${escaped(char)}\p{M}*`).join("");
@@ -83,17 +97,24 @@ export function redact(text: string, names: readonly string[] = []): string {
   return pattern ? masked.normalize("NFD").replace(pattern, "[name]").normalize("NFC") : masked;
 }
 
-// Fields that hold an id or a value from a closed list, never free text. A name is not masked in
-// them, so a surname such as `Open` leaves the status `open` as it is and the log stays valid. A
-// value of another shape there is masked as usual, in case a malformed call put text in it.
-const CLOSED_FIELDS = new Set(["role", "status", "kind", "remedy", "topic", "reason", "code", "country"]);
-const CLOSED_VALUE = /^(?:[a-z]+(?:_[a-z]+)*|[A-Z]{2})$/u;
+// The fields that hold a value from a closed list, with the values each may hold. A value from its
+// field's list is kept, so a surname such as `Open` leaves the status `open` as it is and the log
+// stays valid. Any other value there is masked as usual, in case a malformed call put text in it.
+const CLOSED: Record<string, ReadonlySet<string>> = {
+  role: new Set(Turn.options.map((turn) => turn.shape.role.value)),
+  status: new Set([...OrderStatus.options, ...ReplyStatus.options]),
+  kind: new Set([...RequestKind.options, ...PrintKind.options]),
+  remedy: new Set(Remedy.options),
+  topic: new Set(PolicyTopic.options),
+  reason: new Set([...DenialReason.options, ...HandoverReason.options]),
+  code: new Set(ToolError.options.map((error) => error.shape.code.value)),
+};
 
 // A copy of the value with every string in it passed through `redact`. The value is not changed.
 export function redacted<T>(value: T, names: readonly string[] = []): T {
   const walk = (node: unknown, key?: string): unknown => {
     if (typeof node === "string") {
-      return key !== undefined && CLOSED_FIELDS.has(key) && CLOSED_VALUE.test(node) ? node : redact(node, names);
+      return key !== undefined && CLOSED[key]?.has(node) ? node : redact(node, names);
     }
     if (Array.isArray(node)) return node.map((child) => walk(child));
     if (node !== null && typeof node === "object") {
