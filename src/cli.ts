@@ -25,7 +25,7 @@ import {
   writeLedgerCode,
   type LedgerEntry,
 } from "./ledger.ts";
-import { recordedModel, recordingPath, recordModel, type Recorder } from "./model.ts";
+import { recordedModel, recordingPath, recordModel, StaleRecording, type Recorder } from "./model.ts";
 import { writePacket } from "./packet.ts";
 import {
   noCurrentRuns,
@@ -157,6 +157,7 @@ async function replay(root: string): Promise<string> {
     if (!agents.get(name)?.liveModel) throw new Error(`recordings/${name} has no registered model agent`);
   }
   const reports: string[] = [];
+  let stale = 0;
   for (const agent of agents.values()) {
     if (agent.liveModel && !recorded.has(agent.name)) {
       reports.push(
@@ -164,9 +165,30 @@ async function replay(root: string): Promise<string> {
       );
       continue;
     }
-    reports.push(await tune(root, agent));
+    try {
+      reports.push(await tune(root, agent));
+    } catch (error) {
+      if (!agent.liveModel || !causes(error).some((cause) => cause instanceof StaleRecording)) throw error;
+      stale++;
+      reports.push(
+        `agent: ${agent.name}\nstale: ${(error as Error).message} The tuning recordings of ${agent.name} no longer replay and must be made again with pnpm tune --agent ${agent.name} --record, which calls a paid provider and needs the maintainer's approval.`,
+      );
+    }
   }
-  return reports.join("\n\n");
+  const printed = reports.join("\n\n");
+  if (stale > 0) {
+    throw new Error(`${printed}\n\nreplay failed: the tuning recordings of ${stale} ${stale === 1 ? "agent" : "agents"} must be made again.`);
+  }
+  return printed;
+}
+
+// An error and every error in its chain of causes, because a model loop may wrap what its client threw.
+function causes(error: unknown): unknown[] {
+  const chain: unknown[] = [];
+  for (let at = error; at !== undefined && !chain.includes(at); at = at instanceof Error ? at.cause : undefined) {
+    chain.push(at);
+  }
+  return chain;
 }
 
 async function regradeScored(root: string, cases: TestCase[], entry: LedgerEntry): Promise<Graded> {

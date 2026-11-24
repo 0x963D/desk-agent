@@ -54,13 +54,17 @@ export function recordModel(live: LiveModel, file: string, guard: SpendGuard): R
   };
 }
 
+// A recording that cannot answer the agent's call: it is missing, or it holds other requests, as
+// after a change to the prompt or the functions. Only a new recording, which is a paid call, fixes it.
+export class StaleRecording extends Error {}
+
 export function replayModel(recorded: readonly ModelCall[]): ModelClient {
   let next = 0;
   return {
     async complete(request) {
       const call = recorded[next++];
       if (!call || JSON.stringify(call.request) !== JSON.stringify(request)) {
-        throw new Error(`model call ${next} does not match its recording; record it again`);
+        throw new StaleRecording(`model call ${next} does not match its recording.`);
       }
       return call;
     },
@@ -76,7 +80,7 @@ export function recordedModel(file: string): ModelClient {
   let replay: Promise<ModelClient> | undefined;
   const load = async () => {
     const text = await readFile(file, "utf8").catch(() => {
-      throw new Error(
+      throw new StaleRecording(
         "no recording for this conversation. Recording one calls a paid provider and needs the maintainer's approval.",
       );
     });

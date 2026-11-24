@@ -623,6 +623,30 @@ test("replay fails when a model agent's recordings directory is present but a tu
   await expect(main(["replay"], root)).rejects.toThrow("recordings/plain-gpt-6-luna/tuning/en-asks-for-a-person.json");
 });
 
+test("replay names each model agent whose recordings no longer match its requests, after replaying the rest", async () => {
+  const root = await testRepo();
+  for (const name of ["plain-gpt-6-luna", "sdk-gpt-6-luna"]) {
+    const dir = join(root, "recordings", name, "tuning");
+    await mkdir(dir, { recursive: true });
+    const old = [{ request: { instructions: "an older prompt" }, response: {}, duration_ms: 1, cost_usd: 0 }];
+    await writeFile(join(dir, "en-asks-for-a-person.json"), JSON.stringify(old));
+  }
+
+  const failed = await main(["replay"], root).then(
+    () => "",
+    (error: Error) => error.message,
+  );
+
+  expect(failed).toContain("agent: rule-based\nrun: traces/rule-based/");
+  for (const name of ["plain-gpt-6-luna", "sdk-gpt-6-luna"]) {
+    expect(failed).toContain(
+      `agent: ${name}\nstale: tuning/en-asks-for-a-person stopped the run: model call 1 does not match its recording. Its recording path is recordings/${name}/tuning/en-asks-for-a-person.json. The tuning recordings of ${name} no longer replay and must be made again with pnpm tune --agent ${name} --record`,
+    );
+  }
+  expect(failed).toContain("agent: plain-gpt-6.2-sol\nskipped: recordings/plain-gpt-6.2-sol is missing");
+  expect(failed.split("\n").at(-1)).toBe("replay failed: the tuning recordings of 2 agents must be made again.");
+});
+
 test("replay refuses a recordings directory without a registered model agent", async () => {
   const root = await testRepo();
   await mkdir(join(root, "recordings", "misspelt-agent"), { recursive: true });
