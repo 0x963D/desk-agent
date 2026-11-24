@@ -292,7 +292,7 @@ export const TestCase = z
     category: Category,
     summary: z.string().min(1),
     outage: z.boolean().default(false),
-    turns: z.array(z.string().min(1)).min(1).max(4),
+    turns: z.array(z.string().min(1)).min(1).max(12),
     expect: Expectation,
   })
   .refine((c) => c.id.startsWith(`${c.language}-`), {

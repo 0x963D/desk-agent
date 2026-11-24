@@ -67,7 +67,7 @@ test.each<[string, string, string | RegExp, string, RegExp]>([
   ["an order delivered before it was placed", ORDERS, "delivered_on: 2026-11-14", "delivered_on: 2026-11-06", /delivered_on.*placed_on/],
   ["a delivered order without a delivery date", ORDERS, "    delivered_on: 2026-11-14\n", "", /delivered_on/],
   ["a paid order with a tracking link", ORDERS, "status: paid\n", "status: paid\n    tracking_url: https://curier.example/track/X\n", /tracking_url/],
-  ["more than four customer turns", CASE, /turns:\n/, "turns:\n  - a\n  - b\n  - c\n", /turns/],
+  ["more than twelve customer turns", CASE, /turns:\n/, `turns:\n${"  - a\n".repeat(11)}`, /turns/],
 ])("%s is rejected and the error names the file", async (_, path, from, to, error) => {
   const root = await testRepo();
   await edit(root, path, from, to);

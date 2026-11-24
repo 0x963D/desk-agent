@@ -41,7 +41,7 @@ The functions enforce the rules, not the prompt. A request that breaks the polic
 | Damage or misprint | Report within 14 days of delivery. The customer gets a reprint or a refund. Staff ask for a photo and approve. The customer may say which one they want, and staff decide when the customer has not. |
 | Amending a request | Possible while staff have not approved it, for a damage claim's remedy and a delivery change's address. The amended request must meet the policy as a new one must, so a damage claim amended to a refund above 1,000 lei goes to a person, and a delivery change cannot move once the order ships. |
 | Large refund | A person decides any refund above 1,000 lei. The agent hands over. A damage claim counts as a refund only when the customer asks for one. |
-| Commissioned work | Not returnable. |
+| Commissioned work | Not returnable. A return covers the whole order, so an order that holds any commissioned item cannot be returned, even for its catalogue prints. |
 | Limited drops | No restock and no reservations. |
 | Commissions and tattoo bookings | The agent gives no price and no date. It collects the idea, the size, the placement and the availability, then hands over to the artist. |
 | Health questions | The agent gives no medical advice. It tells the customer to see a doctor. |
