@@ -552,6 +552,17 @@ The method is the one above, in a checkout without the scored sets. The number i
 
 **The frozen agents** use the step 4 prompt at effort `low`. Their committed recordings are the third step 4 run: Haiku 14/19 and Sonnet 15/19. `pnpm replay` reproduces those grades. They have no scored run yet. The 45 live runs, 24 on Haiku and 21 on Sonnet, spent $16.51 by the recorder's count: $0.79 on Haiku and $15.72 on Sonnet.
 
+#### The second climb, the same for both vendors
+
+The GPT prompt had fifteen steps on the first tuning set and the Claude rules six, so the two vendors were not tuned alike. After the tuning set grew to 42 cases and the functions gained `amend_request`, both vendors climb again under one rule, written here before any of its runs.
+
+- **Who climbs.** GPT: `plain-gpt-6-luna` and `plain-gpt-6.2-sol`, with one section of GPT rules after `SYSTEM_PROMPT`, which the two `sdk-gpt-*` agents also send, so the framework comparison keeps one prompt. Claude: `sdk-claude-haiku-5-5-tuned` and `sdk-claude-sonnet-5-5-tuned`, with their own section, starting from the step 4 rules above. The `sdk-claude-*` agents without `-tuned` keep `SYSTEM_PROMPT` alone.
+- **What a step may change.** Only its vendor's section and that vendor's reasoning effort. Never `SYSTEM_PROMPT`, the functions, the cases or the grader. A climber who finds a fault in a case, a function or the grader stops and reports it, because the fix applies to both vendors and both measure step 0 again.
+- **The number.** Cases passed per run in `pnpm tune --agent <name>`, three live runs per step for each agent of the vendor, in a checkout without the scored sets. Step 0 measures the starting prompt.
+- **Keep or revert.** A step is kept when every run of at least one of the vendor's agents passes more cases than the highest run of the step it builds on, and no run of the vendor's other agent passes fewer than the lowest run of that step. Otherwise it is reverted in full, prompt and recordings. The failing traces are read and their root cause written down before each change.
+- **Stop.** A vendor stops when each of its agents passes at least 40 of 42 in every run of its last kept step, after 15 steps, or after 4 reverted steps in a row, whichever comes first.
+- **The frozen agent** uses the last kept step. Its committed recordings are that step's third run.
+
 ## The AI SDK agent
 
 `sdkAgent` in `src/agents/sdk.ts` runs one non-streaming Vercel AI SDK loop on OpenAI and Anthropic. The two GPT entries let a tuning run compare this loop with the plain agent on the same models. The two Claude entries let a tuning run compare providers with the same loop and matching base input and output prices. The pairs are GPT-6 Luna with Claude Haiku 5.5 and GPT-6.2 Sol with Claude Sonnet 5.5.
