@@ -29,7 +29,7 @@ test("the runner's own cases and orders keep the contract", async () => {
   const heldOut = await loadSplit(root, "held-out");
 
   expect(tuning.cases.map((c) => c.id)).toContain("ro-retur-in-termen");
-  expect(heldOut.orders.map((o) => o.order_id)).toEqual(["SC-2001", "SC-2002"]);
+  expect(heldOut.orders.map((o) => o.order_id)).toEqual(["SC-3001", "SC-3002"]);
 });
 
 test("missing case folders and fixture files load as an empty split", async () => {
@@ -56,7 +56,7 @@ test.each<[string, string, string | RegExp, string, RegExp]>([
   ["an id that does not start with the language", CASE, "language: ro", "language: en", /starts with the language/],
   ["a split that differs from the folder", CASE, "split: tuning", "split: held-out", /sits in cases\/tuning/],
   ["an expected order missing from the split's fixture", CASE, "order_id: SC-1004", "order_id: SC-1999", /SC-1999.*does not hold/],
-  ["an order number outside the split's range", ORDERS, "order_id: SC-1001", "order_id: SC-2500", /outside the tuning range/],
+  ["an order number outside the split's range", ORDERS, "order_id: SC-1001", "order_id: SC-3500", /outside the tuning range/],
   ["a total that differs from the sum of the items", ORDERS, "total_ron: 350", "total_ron: 360", /sum of the item prices/],
   ["an order email outside example.com", ORDERS, "ana.lungu@example.com", "ana.lungu@mail.test", /example\.com/],
   ["an email in a message outside example.com", CASE, "irina.pavel@example.com", "irina@mail.test", /not at example\.com/],

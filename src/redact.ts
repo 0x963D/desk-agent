@@ -24,7 +24,7 @@ const STREET_FIRST = new RegExp(
 
 // A house number, up to four words, then a street word: `7 Paper Heron Row`.
 const NUMBER_FIRST = new RegExp(
-  String.raw`${START}\d+[a-z]?,?\s+(?:[\p{L}'’-]+\s+){1,4}(?:street|st|road|rd|row|avenue|ave|lane|drive|way|close|court|place|square|crescent|terrace|boulevard|gardens|mews)\.?${END}`,
+  String.raw`${START}\d+[a-z]?,?\s+(?:[\p{L}'’-]+\s+){1,4}(?:street|st|road|rd|row|avenue|ave|lane|drive|way|close|court|place|square|crescent|terrace|boulevard|gardens|mews|walk|passage)\.?${END}`,
   "giu",
 );
 

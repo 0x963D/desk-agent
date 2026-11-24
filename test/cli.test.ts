@@ -96,7 +96,7 @@ test("the ledger gains one line per score and notes a dirty tree and changed cas
 
 // A final set for the test repository: the held-out cases and orders moved to the final split and its order numbers.
 async function addFinalSet(root: string) {
-  const final = (text: string) => text.replace("split: held-out", "split: final").replaceAll("SC-20", "SC-30").replaceAll("SC20", "SC30");
+  const final = (text: string) => text.replace("split: held-out", "split: final").replaceAll("SC-30", "SC-50").replaceAll("SC30", "SC50");
   await mkdir(join(root, "cases", "final"));
   for (const name of await readdir(join(root, "cases", "held-out"))) {
     await writeFile(join(root, "cases", "final", name), final(await readFile(join(root, "cases", "held-out", name), "utf8")));
@@ -151,14 +151,14 @@ test("the tuning command reaches neither scored set, and score takes only a scor
   await expect(readdir(join(root, "results"))).rejects.toThrow();
 });
 
-test("a final order outside SC-3000 to SC-3999 fails the load", async () => {
+test("a final order outside SC-5000 to SC-5999 fails the load", async () => {
   const root = await testRepo();
   await addFinalSet(root);
   const file = join(root, "fixtures", "final.yaml");
-  await writeFile(file, (await readFile(file, "utf8")).replace("SC-3001", "SC-2001"));
+  await writeFile(file, (await readFile(file, "utf8")).replace("SC-5001", "SC-3001"));
   commitAll(root);
 
-  await expect(main(["score", "--set", "final"], root)).rejects.toThrow("SC-2001 is outside the final range SC-3000 to SC-3999");
+  await expect(main(["score", "--set", "final"], root)).rejects.toThrow("SC-3001 is outside the final range SC-5000 to SC-5999");
 });
 
 test("a score whose ledger line cannot be written saves no results and no summary", async () => {
@@ -455,7 +455,7 @@ test("report stops when a regraded run disagrees with its ledger line", async ()
 test("report says the cases changed when that is why a regraded run disagrees", async () => {
   const { root } = await scoredRepo();
   const caseFile = join(root, "cases", "held-out", "ro-unde-e-comanda.yaml");
-  await writeFile(caseFile, (await readFile(caseFile, "utf8")).replace("track/SC2002", "track/SC9999"));
+  await writeFile(caseFile, (await readFile(caseFile, "utf8")).replace("track/SC3002", "track/SC9999"));
 
   await expect(main(["report"], root)).rejects.toThrow(
     "passed grades to 1 but the ledger records 2; resolved_correctly grades to 1 but the ledger records 2. The held-out cases have changed since it was scored",
