@@ -34,7 +34,7 @@ There are three sets. Each set is written by a different author, each a language
 
 | Set | Conversations | Used for |
 | --- | ---: | --- |
-| Tuning, `cases/tuning/` | 37 | Changing the prompt and the code. It holds the first tuning set and the former validation set, whose expected outcomes reached the person who later changed the policy. |
+| Tuning, `cases/tuning/` | 42 | Changing the prompt and the code. It holds the first tuning set and the former validation set, whose expected outcomes reached the person who later changed the policy, and five later cases with long conversations and amended requests. |
 | Validation, `cases/held-out/` | 18 | Checking a change after tuning. It is the former final set, 11 Romanian and 7 English. Its author saw neither other set, and nobody who tuned the agent has read it, but its scores were published. |
 | Final, `cases/final/` | none yet | Scoring only. A new author writes it from the scope, and nobody who tunes the agent reads it. |
 

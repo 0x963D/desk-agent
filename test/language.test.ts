@@ -39,11 +39,11 @@ test("every tuning customer turn reads as its language or as unsure, never as th
   );
 
   expect(turns.filter(({ read, truth }) => read !== "unsure" && read !== truth)).toEqual([]);
-  // The floor is the count measured on these 75 turns: 66 read right, 9 unsure, none wrong. A share
+  // The floor is the count measured on these 99 turns: 90 read right, 9 unsure, none wrong. A share
   // fell from 90% to 85% when the former validation set moved into tuning, so a count holds instead.
   // A change to the reader that reads fewer right fails here, and a change to the turns measures again.
-  expect(turns).toHaveLength(75);
-  expect(turns.filter(({ read, truth }) => read === truth).length).toBeGreaterThanOrEqual(66);
+  expect(turns).toHaveLength(99);
+  expect(turns.filter(({ read, truth }) => read === truth).length).toBeGreaterThanOrEqual(90);
 });
 
 const replies = (...texts: string[]) => scripted(...texts.map((text) => () => ({ text, status: "resolved" as const })));

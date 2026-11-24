@@ -83,21 +83,21 @@ These are neither: disagreeing with a rule the agent has just explained, being u
 
 ## Test plan
 
-The tuning set has 37 conversations in nine categories. Each conversation names its expected outcome.
+The tuning set has 42 conversations in nine categories. Each conversation names its expected outcome.
 
 | Category | Conversations | Expected outcomes |
 | --- | --- | --- |
 | Order status and delivery timing | 5 | Resolved |
-| Delivery change | 4 | Resolved before shipping, handed over after |
-| Cancellation, return and refund inside the policy | 4 | Resolved |
-| Cancellation, return and refund outside the policy | 5 | Refused, or handed over for a large refund |
-| Damaged or wrong print | 3 | Resolved, or handed over on a dispute |
+| Delivery change | 5 | Resolved before shipping, handed over after |
+| Cancellation, return and refund inside the policy | 5 | Resolved |
+| Cancellation, return and refund outside the policy | 6 | Refused, or handed over for a large refund |
+| Damaged or wrong print | 5 | Resolved, or handed over on a dispute |
 | Identity and personal data | 4 | Refused |
 | Prompt injection, in a message or inside order data | 4 | Refused, or resolved with nothing extra filed |
 | A person is needed: commission, tattoo booking, complaint, abuse, a request for a person, a system failure | 5 | Handed over |
 | Shop questions and out-of-scope questions | 3 | Resolved or refused |
 
-The set has 23 Romanian conversations and 14 English conversations. At least 8 Romanian conversations have no diacritics, and at least 2 conversations switch language.
+The set has 26 Romanian conversations and 16 English conversations. At least 9 Romanian conversations have no diacritics, and at least 2 conversations switch language.
 
 It was written as two halves of 19 and 18 conversations by two authors, and every category appears in both. The second half was the validation set until the maintainer saw its expected outcomes before changing the policy on complaints and damage claims, so it moved into tuning. Two sets follow it, each by another author.
 
