@@ -2,7 +2,8 @@ import type { LedgerEntry } from "./ledger.ts";
 import type { ScoredSet } from "./shapes.ts";
 import { dollars, milliseconds, percentile, type Summary } from "./summary.ts";
 
-// One agent on one set: every scored run with the same cases and the same code as its latest run.
+// One agent on one set: every scored run on the set's current case files with the same code as the
+// latest of them.
 export type ReportRow = {
   agent: string;
   // Each run's summary, regraded, which equals its ledger line.
@@ -13,6 +14,7 @@ export type ReportRow = {
   code: string | undefined;
   commit: string;
   dirty: boolean;
+  // Every ledger line of the agent on the set, on any case files.
   scored: number;
 };
 
@@ -80,7 +82,11 @@ const SET_NAMES: Record<ScoredSet, string> = {
 };
 
 const reportNote = (set: ScoredSet) =>
-  `${SET_NAMES[set]}. Each row covers every scored run of one agent with the same cases and the same code as its latest run, each regraded and matched to its line in results/ledger.jsonl. A count is the total over those runs, its share, and the lowest and highest count in one run. Turn times are nearest-rank over every turn of those runs. Code is the start of the SHA-256 of src/, package.json, pnpm-lock.yaml and the set's fixtures. Times scored counts the agent's lines for this set in the ledger.`;
+  `${SET_NAMES[set]}. Each row covers every scored run of one agent on the set's current case files with the same code as the latest of them, each regraded and matched to its line in results/ledger.jsonl. A count is the total over those runs, its share, and the lowest and highest count in one run. Turn times are nearest-rank over every turn of those runs. Code is the start of the SHA-256 of src/, package.json, pnpm-lock.yaml and the set's fixtures. Times scored counts the agent's lines for this set in the ledger, also those scored on earlier case files, which no row covers.`;
+
+// A set whose every ledger line was scored on other case files than it holds now.
+export const noCurrentRuns = (set: ScoredSet, lines: number) =>
+  `${SET_NAMES[set]}. No run is scored on its current case files. The ledger holds ${lines} ${lines === 1 ? "line" : "lines"} for this set scored on earlier case files, which no row covers.`;
 
 export const RUNS_NOTE =
   "Every line of results/ledger.jsonl, oldest first, as the ledger records it. Cases hash is the start of the SHA-256 of the case files of the set the run was scored on, and code hash the same for its code.";

@@ -11,7 +11,7 @@ Nothing here calls a model or the network unless a command is given `--record`, 
 	pnpm score --set final       # the same on cases/final
 	pnpm regrade <run directory> # grade a saved run again, without the agent
 	pnpm replay                  # run cases/tuning for every agent that can run offline
-	pnpm report                  # per scored set, each agent's runs on the latest run's cases and code, regraded from results/
+	pnpm report                  # per scored set, each agent's runs on its current cases and latest code, regraded from results/
 	pnpm report --markdown       # the same table as Markdown
 	pnpm report --runs           # every line of results/ledger.jsonl, oldest first; --markdown for Markdown
 	pnpm report --check-readme   # fail when the README's table is not the current report --markdown
@@ -297,7 +297,7 @@ A summary needs one result for every case of its split. An interrupted run leave
 
 ## The report and the one-command check
 
-`pnpm report` prints the numbers the README may quote, one table per scored set, the final set first. It reads `results/ledger.jsonl`. For each agent on a set, a row covers every scored run with the same cases and the same code as the agent's latest run on that set. It grades each run's saved conversations again with `grade` and `summarize`, the same code that scored them, and compares every field of each new summary with the summary on its ledger line. One differing field stops the report with the field, both values and the likely cause: the cases changed since the score, or they did not and the grader or the saved conversations did. When every run agrees, the row gives each count as the total over its runs, the share of their conversations, and the lowest and highest count in one run, such as `47/54 (87%), per run 15–16`. The turn times are nearest-rank over every turn of those runs, and the cost is their total over their conversations. The row names its number of runs, the start of the code hash, the commit of the latest run, marked `(dirty)` when that tree was dirty, and the number of lines the agent has for the set, so a reader sees how often the set was used. The report writes nothing and adds no ledger line.
+`pnpm report` prints the numbers the README may quote, one table per scored set, the final set first. It reads `results/ledger.jsonl`. For each agent on a set, a row covers every scored run whose `cases_sha256` is the hash of the set's case files as they are now and whose code is the code of the latest such run. A run scored on other case files measured another test, and when a set moves, as the validation set moved into tuning, its cases sit in another folder and could not be graded at all, so the report never regrades it. An agent with no run on the current case files has no row, and a set with none prints one sentence that says how many of its lines were scored on earlier case files. The report grades each covered run's saved conversations again with `grade` and `summarize`, the same code that scored them, and compares every field of each new summary with the summary on its ledger line. One differing field stops the report with the field and both values. The run's cases are the current ones, so the cause is the grader, the summary or the saved conversations. When every run agrees, the row gives each count as the total over its runs, the share of their conversations, and the lowest and highest count in one run, such as `47/54 (87%), per run 15–16`. The turn times are nearest-rank over every turn of those runs, and the cost is their total over their conversations. The row names its number of runs, the start of the code hash, the commit of the latest run, marked `(dirty)` when that tree was dirty, and the number of lines the agent has for the set, on any case files, so a reader sees how often the set was used. The report writes nothing and adds no ledger line.
 
 | Alternative | Verdict | Why |
 | --- | --- | --- |
@@ -305,7 +305,7 @@ A summary needs one result for every case of its split. An interrupted run leave
 | Print the best run of each agent. | Rejected. | Picking the best of several held-out runs is tuning on the held-out set. |
 | Regrade the latest run only. | Rejected. | One run of a model agent moves by a case from the next. Luna and Sol each passed 47 of 54 held-out conversations over three runs, and the latest runs read 15 and 16, so one looked a case ahead. |
 | Pool every run of the agent on the set. | Rejected. | A run on other cases or other code measures another test or another agent. |
-| Regrade every run on the latest run's cases and code, print the total and the range, and stop on any difference. | Chosen. | Every printed number is one the current code reproduces from committed files, and the range shows how far one run moves. |
+| Regrade every run on the set's current cases and the latest code, print the total and the range, and stop on any difference. | Chosen. | Every printed number is one the current code reproduces from committed files, and the range shows how far one run moves. |
 
 ### How the report knows two runs used the same code
 

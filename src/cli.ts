@@ -27,7 +27,16 @@ import {
 } from "./ledger.ts";
 import { recordedModel, recordingPath, recordModel, type Recorder } from "./model.ts";
 import { writePacket } from "./packet.ts";
-import { README_END, README_START, readmeTable, REPORTED_SETS, reportTable, runsTable, type ReportRow } from "./report.ts";
+import {
+  noCurrentRuns,
+  README_END,
+  README_START,
+  readmeTable,
+  REPORTED_SETS,
+  reportTable,
+  runsTable,
+  type ReportRow,
+} from "./report.ts";
 import { runCase } from "./runner.ts";
 import { writeSheet } from "./sheet.ts";
 import { Conversation, ScoredSet, TestResult, type Split, type TestCase } from "./shapes.ts";
@@ -177,14 +186,10 @@ async function regradeScored(root: string, cases: TestCase[], entry: LedgerEntry
   const fields = Object.keys(entry.summary) as (keyof Summary)[];
   const differ = fields.filter((field) => regraded[field] !== entry.summary[field]);
   if (differ.length === 0) return graded;
-  const cause =
-    entry.cases_sha256 === (await hashCaseFiles(root, set))
-      ? `The ${set} cases are the ones it was scored on, so the grader, the summary or the saved conversations have changed.`
-      : `The ${set} cases have changed since it was scored, so the agent must be scored again before its numbers are reported.`;
   throw new Error(
     `${entry.run} no longer agrees with its line in ${shown(root, ledgerFile(root))} of ${entry.time}: ${differ
       .map((field) => `${field} grades to ${regraded[field]} but the ledger records ${entry.summary[field]}`)
-      .join("; ")}. ${cause}`,
+      .join("; ")}. The ${set} cases are the ones it was scored on, so the grader, the summary or the saved conversations have changed.`,
   );
 }
 
@@ -198,17 +203,22 @@ async function scoreReport(root: string, markdown: boolean): Promise<string> {
   for (const set of REPORTED_SETS) {
     const scored = ledger.filter((entry) => entry.summary.split === set);
     if (scored.length === 0) continue;
+    // A run scored on other case files measured another test, and its cases may now sit in another
+    // set, so it is never regraded. It still counts as a time the agent was scored on the set.
+    const current = await hashCaseFiles(root, set);
+    const onCurrent = scored.filter((entry) => entry.cases_sha256 === current);
+    if (onCurrent.length === 0) {
+      tables.push(noCurrentRuns(set, scored.length));
+      continue;
+    }
     const { cases } = await casesOf(root, set);
     const rows: ReportRow[] = [];
-    for (const agent of new Set(scored.map((entry) => entry.agent))) {
-      const lines = scored.filter((entry) => entry.agent === agent);
+    for (const agent of new Set(onCurrent.map((entry) => entry.agent))) {
+      const lines = onCurrent.filter((entry) => entry.agent === agent);
       const latest = lines.at(-1)!;
       const latestCode = codeOf(latest, code);
       // A line whose code is unknown stands alone, because nothing shows that another run used the same code.
-      const same =
-        latestCode === undefined
-          ? [latest]
-          : lines.filter((entry) => entry.cases_sha256 === latest.cases_sha256 && codeOf(entry, code) === latestCode);
+      const same = latestCode === undefined ? [latest] : lines.filter((entry) => codeOf(entry, code) === latestCode);
       const graded = await Promise.all(same.map((entry) => regradeScored(root, cases, entry)));
       const results = graded.flatMap((run) => run.results);
       rows.push({
@@ -219,7 +229,7 @@ async function scoreReport(root: string, markdown: boolean): Promise<string> {
         code: latestCode,
         commit: resolveLedgerCommit(latest, commitMap),
         dirty: latest.dirty,
-        scored: lines.length,
+        scored: scored.filter((entry) => entry.agent === agent).length,
       });
     }
     tables.push(reportTable(set, rows, { markdown }));

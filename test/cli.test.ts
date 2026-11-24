@@ -452,14 +452,45 @@ test("report stops when a regraded run disagrees with its ledger line", async ()
   );
 });
 
-test("report says the cases changed when that is why a regraded run disagrees", async () => {
+test("a run scored on earlier case files is not regraded, and its agent has no row until it is scored on the current ones", async () => {
   const { root } = await scoredRepo();
   const caseFile = join(root, "cases", "held-out", "ro-unde-e-comanda.yaml");
+  // The edit would fail this run's regrade, so a report that regraded it would stop.
   await writeFile(caseFile, (await readFile(caseFile, "utf8")).replace("track/SC3002", "track/SC9999"));
+  const before = await tree(root);
 
-  await expect(main(["report"], root)).rejects.toThrow(
-    "passed grades to 1 but the ledger records 2; resolved_correctly grades to 1 but the ledger records 2. The held-out cases have changed since it was scored",
+  const stale = await main(["report", "--markdown"], root);
+  await writeFile(join(root, "README.md"), readme(stale));
+  const checked = await main(["report", "--check-readme"], root);
+  const after = (await tree(root)).filter(([file]) => file !== "README.md");
+  await main(["score"], root);
+  const [row] = await reportRows(root);
+
+  expect(stale).toBe(
+    "Validation set, cases/held-out. No run is scored on its current case files. The ledger holds 1 line for this set scored on earlier case files, which no row covers.",
   );
+  expect(checked).toBe("README.md shows the current pnpm report --markdown table.");
+  expect(after).toEqual(before);
+  expect(row?.slice(0, 3)).toEqual(["rule-based", "1", "2"]);
+  expect(row?.at(-1)).toBe("2");
+});
+
+test("a set whose cases moved away is reported without loading its empty folder", async () => {
+  const root = await testRepo();
+  await addFinalSet(root);
+  commitAll(root);
+  await main(["score", "--set", "final"], root);
+  await main(["score"], root);
+  await rm(join(root, "cases", "final"), { recursive: true });
+  await rm(join(root, "fixtures", "final.yaml"));
+
+  const lines = (await main(["report", "--markdown"], root)).split(/\n/);
+
+  expect(lines[0]).toBe(
+    "Final set, cases/final. No run is scored on its current case files. The ledger holds 1 line for this set scored on earlier case files, which no row covers.",
+  );
+  expect(lines.filter((line) => line.startsWith("| rule-based |"))).toHaveLength(1);
+  expect(lines.find((line) => line.startsWith("Validation set"))).toContain("Times scored counts the agent's lines for this set in the ledger, also those scored on earlier case files");
 });
 
 test("report on an empty ledger exits with a clear message", async () => {
