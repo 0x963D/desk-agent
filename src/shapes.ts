@@ -270,7 +270,8 @@ export const Expectation = z.discriminatedUnion("outcome", [
   }),
   z.strictObject({
     outcome: z.literal("handed_over"),
-    handover_reason: HandoverReason.optional(),
+    // One reason, or the reasons that apply together in the same turn, any of which passes.
+    handover_reason: z.union([HandoverReason, z.array(HandoverReason).min(2)]).optional(),
     requests: Requests,
     reply_mentions: Phrases,
     reply_never_mentions: Phrases,

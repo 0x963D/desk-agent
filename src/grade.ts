@@ -86,10 +86,11 @@ export function grade(testCase: TestCase, conversation: Conversation): TestResul
 
   const handover = handoverOf(turns);
   if (expect.outcome === "handed_over" && expect.handover_reason && handover) {
-    if (handover.reason !== expect.handover_reason) {
+    const allowed = [expect.handover_reason].flat();
+    if (!allowed.includes(handover.reason)) {
       failures.push({
         kind: "wrong_handover_reason",
-        detail: `expected ${expect.handover_reason}, observed ${handover.reason}`,
+        detail: `expected ${allowed.join(" or ")}, observed ${handover.reason}`,
       });
     }
   }

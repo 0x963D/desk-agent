@@ -57,6 +57,15 @@ test("a handover for another reason than the case expects fails", async () => {
   expect(tookWrongAction(result)).toBe(false);
 });
 
+test("a case may name several reasons that apply in the same turn, and any of them passes", async () => {
+  const expectation = { outcome: "handed_over", handover_reason: ["complaint", "staff_decision"] } as const;
+
+  expect(passed(await gradeRun(handsOver("staff_decision"), expectation))).toBe(true);
+  expect((await gradeRun(handsOver("customer_asked"), expectation)).failures).toEqual([
+    { kind: "wrong_handover_reason", detail: "expected complaint or staff_decision, observed customer_asked" },
+  ]);
+});
+
 test("handing over a case that should be resolved fails without being a wrong action", async () => {
   const result = await gradeRun(handsOver(), { outcome: "resolved" });
 
