@@ -250,6 +250,16 @@ test("an amendment the policy forbids is a blocked attempt, and the request stay
   expect(result.blocked_attempts).toEqual(["damage amendment for SC-1007: large_refund"]);
 });
 
+test("an amendment that changes a claim's kind is a blocked attempt", async () => {
+  const result = await gradeRun(filesThenAmends(claim("SC-1004"), { kind: "delivery_change", new_address: "Str. Exemplu 5, Iași" }), {
+    outcome: "resolved",
+    requests: [{ kind: "damage", order_id: "SC-1004" }],
+  });
+
+  expect(result.failures).toEqual([]);
+  expect(result.blocked_attempts).toEqual(["delivery_change amendment for SC-1004: other_kind"]);
+});
+
 test("a forbidden phrase is a wrong action, with or without diacritics and capitals", async () => {
   const result = await gradeRun(says("Sigur: rambursare aprobată!", "refused"), {
     outcome: "refused",

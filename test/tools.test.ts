@@ -193,21 +193,23 @@ test("an amendment is checked against the policy again, and a rejected one chang
   expect(reprint).toMatchObject({ ok: true, data: { request_id: "R-1" } });
 });
 
+// A refusal that depends on the request on file is a policy denial, so the grader counts it as a
+// blocked attempt. Only input that no request could take is invalid_input.
 test.each([
-  ["an unknown request id", () => amend("SC-1004", "R-9", { kind: "damage", remedy: "reprint" }), "not_found", "No request R-9"],
-  ["another customer's request", () => amend("SC-1001", "R-1", { kind: "damage", remedy: "reprint" }), "not_found", "No request R-1"],
-  ["an order that is not verified", () => ({ ...amend("SC-1004", "R-1", { kind: "damage", remedy: "reprint" }), email: "x@example.com" }), "not_found", "No order matches"],
-  ["a change of another kind", () => amend("SC-1004", "R-1", { kind: "delivery_change", new_address: "Str. Exemplu 5, Iași" }), "invalid_input", "R-1 is a damage claim, so the change must have kind damage"],
-  ["a cancellation", () => amend("SC-1001", "R-2", { kind: "damage", remedy: "refund" }), "invalid_input", "R-2 is a cancellation, which has nothing to amend"],
-  ["a change of kind return", () => amend("SC-1004", "R-1", { kind: "return" }), "invalid_input", "A cancellation or a return has nothing to amend"],
-] as const)("an amendment of %s is refused with a clear error", async (_, input, code, message) => {
+  ["an unknown request id", () => amend("SC-1004", "R-9", { kind: "damage", remedy: "reprint" }), { code: "not_found" }, "No request R-9"],
+  ["another customer's request", () => amend("SC-1001", "R-1", { kind: "damage", remedy: "reprint" }), { code: "not_found" }, "No request R-1"],
+  ["an order that is not verified", () => ({ ...amend("SC-1004", "R-1", { kind: "damage", remedy: "reprint" }), email: "x@example.com" }), { code: "not_found" }, "No order matches"],
+  ["a change of another kind", () => amend("SC-1004", "R-1", { kind: "delivery_change", new_address: "Str. Exemplu 5, Iași" }), { code: "policy_denied", reason: "other_kind" }, "The request is a damage claim, so the change must have kind damage"],
+  ["a cancellation", () => amend("SC-1001", "R-2", { kind: "damage", remedy: "refund" }), { code: "policy_denied", reason: "nothing_to_amend" }, "The request is a cancellation, which has nothing to amend"],
+  ["a change of kind return", () => amend("SC-1004", "R-1", { kind: "return" }), { code: "invalid_input" }, "A cancellation or a return has nothing to amend"],
+] as const)("an amendment of %s is refused with a clear error", async (_, input, error, message) => {
   const tools = await testBackend();
   await tools.call("file_request", request("SC-1004", { kind: "damage", description: "Torn corner." }));
   await tools.call("file_request", request("SC-1001", { kind: "cancellation" }));
 
   expect(await tools.call("amend_request", input())).toMatchObject({
     ok: false,
-    error: { code, message: expect.stringContaining(message) },
+    error: { ...error, message: expect.stringContaining(message) },
   });
 });
 

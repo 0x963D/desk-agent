@@ -159,6 +159,8 @@ export const DenialReason = z.enum([
   "commissioned_work",
   "large_refund",
   "duplicate",
+  "nothing_to_amend",
+  "other_kind",
 ]);
 export type DenialReason = z.infer<typeof DenialReason>;
 

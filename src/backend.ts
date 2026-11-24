@@ -31,6 +31,13 @@ const UNAVAILABLE = fail({
   message: "The shop system is not answering. Hand the conversation over with reason system_failure.",
 });
 
+const KIND_NAMES: Record<RequestKind, string> = {
+  cancellation: "a cancellation",
+  return: "a return",
+  damage: "a damage claim",
+  delivery_change: "a delivery change",
+};
+
 function denialMessage(reason: DenialReason, kind: RequestKind, shop: Shop): string {
   switch (reason) {
     case "production_started":
@@ -47,6 +54,10 @@ function denialMessage(reason: DenialReason, kind: RequestKind, shop: Shop): str
       return `A person decides any refund above ${shop.person_decides_refunds_above_ron} lei. Hand the conversation over with reason staff_decision.`;
     case "duplicate":
       return "A request of this kind is already on file for this order.";
+    case "nothing_to_amend":
+      return `The request is ${KIND_NAMES[kind]}, which has nothing to amend.`;
+    case "other_kind":
+      return `The request is ${KIND_NAMES[kind]}, so the change must have kind ${kind}.`;
   }
 }
 
@@ -94,13 +105,6 @@ const remedyOf = (change: Change) => (change.kind === "damage" ? change.remedy :
 
 // One record per request this conversation filed, keyed by its id. An amendment replaces its change.
 type OnFile = { order_id: string; change: Change };
-
-const KIND_NAMES: Record<RequestKind, string> = {
-  cancellation: "a cancellation",
-  return: "a return",
-  damage: "a damage claim",
-  delivery_change: "a delivery change",
-};
 
 export function createBackend(world: World, options: { outage?: boolean } = {}): Tools {
   const { shop, orders } = world;
@@ -168,13 +172,13 @@ export function createBackend(world: World, options: { outage?: boolean } = {}):
         });
       }
       const kind = request.change.kind;
-      if (kind !== change.kind) {
-        const what = kind === "cancellation" || kind === "return" ? "which has nothing to amend" : `so the change must have kind ${kind}`;
-        return fail({ code: "invalid_input", message: `${id} is ${KIND_NAMES[kind]}, ${what}.` });
-      }
+      const refuse = (reason: DenialReason) =>
+        fail({ code: "policy_denied", reason, message: denialMessage(reason, kind, shop) });
+      if (kind === "cancellation" || kind === "return") return refuse("nothing_to_amend");
+      if (kind !== change.kind) return refuse("other_kind");
       const next = amended(request.change, change);
       const reason = denial(shop, order, kind, remedyOf(next));
-      if (reason) return fail({ code: "policy_denied", reason, message: denialMessage(reason, kind, shop) });
+      if (reason) return refuse(reason);
       filed.set(id, { order_id: order.order_id, change: next });
       return { ok: true, data: { request_id: id, status: "pending_approval" } };
     },
