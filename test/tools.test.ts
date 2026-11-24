@@ -162,6 +162,55 @@ test("a second request of the same kind for the same order is a duplicate", asyn
   expect(otherKind).toMatchObject({ ok: true, data: { request_id: "R-2" } });
 });
 
+const amend = (order_id: string, request_id: string, change: Record<string, unknown>) => ({
+  ...verified(order_id),
+  request_id,
+  change,
+});
+
+test.each([
+  ["a damage claim's remedy", "SC-1004", { kind: "damage", description: "Torn corner." }, { kind: "damage", remedy: "reprint" }],
+  ["a delivery change's address", "SC-1001", { kind: "delivery_change", new_address: "Str. Exemplu 5, Iași" }, { kind: "delivery_change", new_address: "Str. Exemplu 7, Iași" }],
+])("%s is amended in place and stays pending", async (_, order_id, change, amendment) => {
+  const tools = await testBackend();
+  await tools.call("file_request", request(order_id, change));
+
+  const amended = await tools.call("amend_request", amend(order_id, " r-1 ", amendment));
+  const again = await tools.call("file_request", request(order_id, change));
+
+  expect(amended).toEqual({ ok: true, data: { request_id: "R-1", status: "pending_approval" } });
+  expect(again).toMatchObject({ ok: false, error: { code: "policy_denied", reason: "duplicate" } });
+});
+
+test("an amendment is checked against the policy again, and a rejected one changes nothing", async () => {
+  const tools = await testBackend();
+  await tools.call("file_request", request("SC-1007", { kind: "damage", description: "Smudged.", remedy: "reprint" }));
+
+  const refund = await tools.call("amend_request", amend("SC-1007", "R-1", { kind: "damage", remedy: "refund" }));
+  const reprint = await tools.call("amend_request", amend("SC-1007", "R-1", { kind: "damage", remedy: "reprint" }));
+
+  expect(refund).toMatchObject({ ok: false, error: { code: "policy_denied", reason: "large_refund" } });
+  expect(reprint).toMatchObject({ ok: true, data: { request_id: "R-1" } });
+});
+
+test.each([
+  ["an unknown request id", () => amend("SC-1004", "R-9", { kind: "damage", remedy: "reprint" }), "not_found", "No request R-9"],
+  ["another customer's request", () => amend("SC-1001", "R-1", { kind: "damage", remedy: "reprint" }), "not_found", "No request R-1"],
+  ["an order that is not verified", () => ({ ...amend("SC-1004", "R-1", { kind: "damage", remedy: "reprint" }), email: "x@example.com" }), "not_found", "No order matches"],
+  ["a change of another kind", () => amend("SC-1004", "R-1", { kind: "delivery_change", new_address: "Str. Exemplu 5, Iași" }), "invalid_input", "R-1 is a damage claim, so the change must have kind damage"],
+  ["a cancellation", () => amend("SC-1001", "R-2", { kind: "damage", remedy: "refund" }), "invalid_input", "R-2 is a cancellation, which has nothing to amend"],
+  ["a change of kind return", () => amend("SC-1004", "R-1", { kind: "return" }), "invalid_input", "A cancellation or a return has nothing to amend"],
+] as const)("an amendment of %s is refused with a clear error", async (_, input, code, message) => {
+  const tools = await testBackend();
+  await tools.call("file_request", request("SC-1004", { kind: "damage", description: "Torn corner." }));
+  await tools.call("file_request", request("SC-1001", { kind: "cancellation" }));
+
+  expect(await tools.call("amend_request", input())).toMatchObject({
+    ok: false,
+    error: { code, message: expect.stringContaining(message) },
+  });
+});
+
 test("a request for an order that is not verified is not_found", async () => {
   const tools = await testBackend();
 
@@ -188,7 +237,7 @@ test.each([
   expect(await tools.call(name, input)).toMatchObject({ ok: false, error: { code: "invalid_input" } });
 });
 
-test.each(["lookup_order", "lookup_account", "check_policy", "file_request"] as const)(
+test.each(["lookup_order", "lookup_account", "check_policy", "file_request", "amend_request"] as const)(
   "during an outage %s answers unavailable",
   async (name) => {
     const tools = await testBackend({ outage: true });

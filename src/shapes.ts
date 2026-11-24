@@ -121,6 +121,21 @@ export const Change = z.discriminatedUnion("kind", [
 ]);
 export type Change = z.infer<typeof Change>;
 
+// What `amend_request` may change on a filed request: a damage claim's remedy or a delivery
+// change's address. A cancellation and a return carry nothing to change.
+export const Amendment = z.discriminatedUnion(
+  "kind",
+  [
+    z.object({ kind: z.literal("damage"), remedy: Remedy.describe("The remedy the customer now says they want.") }),
+    z.object({ kind: z.literal("delivery_change"), new_address: FilledText }),
+  ],
+  { error: "Only a damage claim's remedy or a delivery change's address can be amended. A cancellation or a return has nothing to amend." },
+);
+export type Amendment = z.infer<typeof Amendment>;
+
+// The request on file after an amendment of the same kind: the amended field replaced, the rest kept.
+export const amended = (change: Change, amendment: Amendment): Change => Change.parse({ ...change, ...amendment });
+
 export const HandoverReason = z.enum([
   "customer_asked",
   "complaint",
@@ -160,6 +175,7 @@ export const ToolName = z.enum([
   "lookup_account",
   "check_policy",
   "file_request",
+  "amend_request",
   "hand_over",
 ]);
 export type ToolName = z.infer<typeof ToolName>;

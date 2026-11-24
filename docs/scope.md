@@ -15,7 +15,7 @@ One person answers every message today. The agent takes the routine messages and
 
 ## What the agent can do
 
-The agent works through five typed functions. It has no other access to the shop.
+The agent works through six typed functions. It has no other access to the shop.
 
 | Function | What it does | Limit |
 | --- | --- | --- |
@@ -23,6 +23,7 @@ The agent works through five typed functions. It has no other access to the shop
 | Account lookup | Lists the orders placed with one email. | Needs the same verification as order lookup. |
 | Policy check | Returns the shop policy on one topic. | Read only. |
 | Request | Files a cancellation, a return, a damage claim or a delivery change for staff approval. | The function checks the policy itself. It files a request and never carries it out. |
+| Amendment | Changes a request filed in this conversation that awaits approval: a damage claim's remedy or a delivery change's address. | The function checks the policy again. A cancellation or a return has nothing to amend. |
 | Handover | Passes the conversation to a person with a reason and a summary. | Always available. |
 
 The functions enforce the rules, not the prompt. A request that breaks the policy fails inside the function, whatever the model was told.
@@ -38,6 +39,7 @@ The functions enforce the rules, not the prompt. A request that breaks the polic
 | Cancellation | Possible while the order is paid and production has not started. Staff must approve the refund. |
 | Return | Within 14 days of delivery, for open and limited prints. The customer pays the return postage. Staff must approve the refund. |
 | Damage or misprint | Report within 14 days of delivery. The customer gets a reprint or a refund. Staff ask for a photo and approve. The customer may say which one they want, and staff decide when the customer has not. |
+| Amending a request | Possible while staff have not approved it, for a damage claim's remedy and a delivery change's address. The amended request must meet the policy as a new one must, so a damage claim amended to a refund above 1,000 lei goes to a person, and a delivery change cannot move once the order ships. |
 | Large refund | A person decides any refund above 1,000 lei. The agent hands over. A damage claim counts as a refund only when the customer asks for one. |
 | Commissioned work | Not returnable. |
 | Limited drops | No restock and no reservations. |
@@ -56,8 +58,9 @@ Every conversation ends in one of three outcomes.
 
 A wrong action is an error that costs the shop money or trust. The test runner counts each one.
 
-- Filing a request that the policy forbids.
-- Filing a request for a customer who is not verified.
+- Filing or amending a request that the policy forbids.
+- Filing or amending a request for a customer who is not verified.
+- Filing or amending a request the customer never asked for.
 - Disclosing order or personal data to someone who is not verified.
 - Promising what only staff can decide, such as an approved refund, a restock, a tattoo price or a date.
 

@@ -1,6 +1,6 @@
 # Design
 
-This page explains the foundation of the support agent for Studio Cobalt: the data shapes, the five functions and the MCP server that carries them, the runner, the recorder, the grader and the scoring record. It records what was chosen, what was considered, and why the alternatives lost. [The scope](scope.md) holds the shop policy, and [the case contract](writing-cases.md) holds the case and fixture formats. This page does not repeat them.
+This page explains the foundation of the support agent for Studio Cobalt: the data shapes, the six functions and the MCP server that carries them, the runner, the recorder, the grader and the scoring record. It records what was chosen, what was considered, and why the alternatives lost. [The scope](scope.md) holds the shop policy, and [the case contract](writing-cases.md) holds the case and fixture formats. This page does not repeat them.
 
 Nothing here calls a model or the network unless a command is given `--record`, or `pnpm chat` talks live to a model agent.
 
@@ -20,7 +20,7 @@ Nothing here calls a model or the network unless a command is given `--record`, 
 	pnpm tune --agent rule-based # pick an agent from the registry
 	pnpm tune --agent plain-gpt-6-luna   # the model agent, replayed from recordings/
 	pnpm tune --record           # call the agent's live model and write recordings/<agent>/tuning/
-	pnpm mcp                     # serve the five functions over stdio, on the tuning orders
+	pnpm mcp                     # serve the six functions over stdio, on the tuning orders
 	pnpm chat --agent <name>     # type as the customer and the agent answers, on the tuning orders
 	pnpm chat --agent <name> --replay <tuning case id>   # play a tuning case's recording, offline
 	pnpm audit:packet --out <dir> --key <file> [--seed <text>]   # a blind packet of the scored model conversations
@@ -33,7 +33,7 @@ Git ignores `traces/`, which holds the tuning runs and the chat session logs, an
 The source is about 3,300 lines in 29 files. `wc -l src/*.ts src/agents/*.ts` regenerates the count.
 
 1. `src/shapes.ts` names every shape that crosses a file or a function boundary.
-2. `src/tools.ts` holds the five function contracts.
+2. `src/tools.ts` holds the six function contracts.
 3. `src/backend.ts` is the in-memory shop. It verifies the customer and enforces the policy.
 4. `src/mcp.ts` serves the backend as an MCP server and reads it back through an MCP client. It is also the stdio entry.
 5. `src/agent.ts` is the agent boundary. `src/model.ts` replays and records model calls, and `src/spend.ts` caps what a recording or a live chat may spend. `src/snapshot.ts` is the one deep copy that the backend, the runner and the recorder share.
@@ -77,9 +77,9 @@ Seven choices in the shapes and the loader remove states that should not exist.
 
 Data fields use `snake_case` everywhere, in case files, traces, function inputs and code.
 
-## The five functions
+## The six functions
 
-`contracts` in `src/tools.ts` maps each function to a description, an input schema and an output schema. The MCP server lists each function with `z.toJSONSchema(contracts[name].input)` as its input schema, and a test checks through an MCP client that each root is an object. A union at the root is not an object schema, and some MCP clients and model APIs reject it. That is why `file_request` keeps its union one level down, in `change`.
+`contracts` in `src/tools.ts` maps each function to a description, an input schema and an output schema. The MCP server lists each function with `z.toJSONSchema(contracts[name].input)` as its input schema, and a test checks through an MCP client that each root is an object. A union at the root is not an object schema, and some MCP clients and model APIs reject it. That is why `file_request` and `amend_request` keep their union one level down, in `change`.
 
 | Function | Input | Output |
 | --- | --- | --- |
@@ -87,6 +87,7 @@ Data fields use `snake_case` everywhere, in case files, traces, function inputs 
 | `lookup_account` | `email`, `order_id` | The orders placed with that email: number, status, date and total. |
 | `check_policy` | `topic`, and `order_id` with `email` or neither | The rule in Romanian and English. For a request kind and a verified order, a decision as well. |
 | `file_request` | `order_id`, `email`, `change` | A request id with the status `pending_approval`. |
+| `amend_request` | `order_id`, `email`, `request_id`, `change` | The same request id with the status `pending_approval`. |
 | `hand_over` | `reason`, `summary`, optional `order_id` | A handover id. |
 
 A damage claim names `remedy` only when the customer chose a reprint or a refund. The field is optional, because the scope lets staff decide after a photo, and a required field made the agent ask a question that the customer had no reason to answer. A new address, a damage description and a handover summary must hold more than spaces, or the function answers `invalid_input`. A customer is verified when a function receives an order number and the email on that order. The comparison ignores capitals and surrounding spaces. An unknown order and a wrong email return the same `not_found` error, so the answer reveals nothing about which one was wrong.
@@ -103,13 +104,15 @@ Errors are values: `{ ok: false, error: { code, message } }`. The message is wri
 | `cancellation`, `return`, `damage` with `remedy: refund` | The refund, which is the order total, is above 1,000 lei. | `large_refund` |
 | Any | A request of the same kind is already on file for the order. | `duplicate` |
 
+`amend_request` changes a request this conversation filed while it awaits approval. Its `change` is an `Amendment`: a damage claim's `remedy`, required here, or a delivery change's `new_address`. A cancellation or a return has nothing to amend, so `Amendment` holds neither kind, and the function answers `invalid_input` with that sentence. The customer is verified as for every function. A request id that this conversation's `file_request` never returned, or one it returned for another order, answers `not_found`, the answer an unverified customer gets. A request of another kind than the change answers `invalid_input` and names the request's kind. The amended request is then checked against the table above, apart from the duplicate row, because the request is already on file: a damage claim amended to a refund above the limit answers `large_refund`, and a delivery change amended after shipping answers `already_shipped`. A refused amendment changes nothing. The backend keeps one record per request, keyed by its id, so an amendment replaces the field it names and keeps the rest, such as the damage description.
+
 The windows and the limit come from `fixtures/shop.yaml`, and every window counts from its business date. When a case sets `outage: true`, every function except `hand_over` answers `unavailable`. A second `hand_over` returns the same id, and the trace keeps the first handover.
 
 The fake backend is built again from the fixtures for each conversation, so no case sees another case's requests. Every answer is a JSON copy of the backend's data, so a caller that edits an order it looked up changes nothing in the shop.
 
 ## The MCP server
 
-`shopServer` in `src/mcp.ts` serves one backend over MCP with the official TypeScript SDK, `@modelcontextprotocol/server` and `@modelcontextprotocol/client` at exactly 2.4.0. `tools/list` returns `toolDefinitions`: the five names, their descriptions and their input schemas. `tools/call` hands the arguments to the backend unchanged and answers with the function result as `structuredContent`, the same result as JSON text in `content`, and `isError` set when the result is `ok: false`. A function error is therefore a tool result the model reads, never a JSON-RPC error. A name that is not one of the five answers `invalid_input` the same way.
+`shopServer` in `src/mcp.ts` serves one backend over MCP with the official TypeScript SDK, `@modelcontextprotocol/server` and `@modelcontextprotocol/client` at exactly 2.4.0. `tools/list` returns `toolDefinitions`: the six names, their descriptions and their input schemas. `tools/call` hands the arguments to the backend unchanged and answers with the function result as `structuredContent`, the same result as JSON text in `content`, and `isError` set when the result is `ok: false`. A function error is therefore a tool result the model reads, never a JSON-RPC error. A name that is not one of the six answers `invalid_input` the same way.
 
 `remoteTools` turns an MCP client back into `Tools`. It parses the structured content, and on success parses the data with the function's output schema, so a malformed answer fails loudly at the boundary.
 
@@ -155,13 +158,15 @@ On the 75 customer turns of the tuning set, where the case's `language` field an
 
 ## Contested point 2: where the effects come from
 
-The filed requests and the handover are the accepted `file_request` and `hand_over` calls in the turns. The runner never reads the backend's own state.
+The requests on file are the accepted `file_request` calls in the turns, each with the accepted `amend_request` calls that name its request id applied in order. The handover is the first accepted `hand_over` call. The runner never reads the backend's own state.
 
 | Alternative | Verdict | Why |
 | --- | --- | --- |
 | Read the requests and the handover from the backend after the run. | Rejected. | A real MCP server will not expose its private state to the runner. The conversation would also hold two records of one fact, and they could disagree. |
 | Store the derived requests in the conversation. | Rejected. | The copy repeats what the turns already hold, and a regrade would have to trust it. |
 | Derive the effects from the trace. | Chosen. | The trace is the single record. It holds the input that the function accepted, and a regrade reads nothing else. |
+
+A case's `requests` therefore names each request as it stands at the end. A claim filed without a remedy and amended to a reprint is one damage claim with `remedy: reprint`, never two.
 
 Because `createBackend` returns only `Tools`, the runner has nothing else to read. A test runs a case against a backend that only answers calls and grades the saved trace.
 
@@ -183,9 +188,9 @@ The runner plays every customer turn until a handover appears, because a person 
 
 ## Contested point 4: what counts as a wrong action
 
-A conversation has a wrong action when a filed request is one the case does not expect, or when a reply contains a phrase from `reply_never_mentions`. `WRONG_ACTIONS` in `src/grade.ts` is the one place that draws this line.
+A conversation has a wrong action when a request on file at the end is one the case does not expect, or when a reply contains a phrase from `reply_never_mentions`. An amendment the customer never asked for leaves such a request, so it is a wrong action by the same rule as a filing. `WRONG_ACTIONS` in `src/grade.ts` is the one place that draws this line.
 
-The function enforces the policy, as the scope requires. A request that the policy forbids is therefore rejected and never filed. The summary reports such conversations as blocked attempts: the conversations in which `file_request` was rejected with `policy_denied` or `not_found`.
+The function enforces the policy, as the scope requires. A request that the policy forbids is therefore rejected and never filed. The summary reports such conversations as blocked attempts: the conversations in which `file_request` or `amend_request` was rejected with `policy_denied` or `not_found`. An amendment that names a request id the conversation never filed is `not_found`, so it counts too.
 
 | Alternative | Verdict | Why |
 | --- | --- | --- |
@@ -199,7 +204,7 @@ A wrong action that the function cannot catch is still caught by the grader. An 
 
 ## Contested point 5: how a filed request matches an expected one
 
-A filed request matches when its kind and its order number match. When the case names `remedy` or `new_address`, that field must match too. An address is compared after the same normalisation as a phrase: capitals, diacritics and repeated spaces are ignored.
+A request on file matches when its kind and its order number match, after its amendments. When the case names `remedy` or `new_address`, that field must match too. An address is compared after the same normalisation as a phrase: capitals, diacritics and repeated spaces are ignored.
 
 | Alternative | Verdict | Why |
 | --- | --- | --- |
@@ -363,7 +368,7 @@ The audit is blind only to a reader who has nothing but the packet. The saved co
 
 ## The rule-based agent
 
-`src/agents/rule-based.ts` is a baseline of keyword rules, kept small on purpose. It hands over when the customer asks for a person or for a commission or a tattoo. It asks for the order number and the email until it has both. It then answers a status question from `lookup_order`, or files a cancellation or a return. It hands over on `unavailable` and on a `large_refund` rejection, and it refuses on any other rejection. Any other message goes to a person with the reason `staff_decision`. It never calls `check_policy`, and it files no damage claim and no delivery change. A later agent has a floor to beat.
+`src/agents/rule-based.ts` is a baseline of keyword rules, kept small on purpose. It hands over when the customer asks for a person or for a commission or a tattoo. It asks for the order number and the email until it has both. It then answers a status question from `lookup_order`, or files a cancellation or a return. It hands over on `unavailable` and on a `large_refund` rejection, and it refuses on any other rejection. Any other message goes to a person with the reason `staff_decision`. It never calls `check_policy` or `amend_request`, and it files no damage claim and no delivery change. A later agent has a floor to beat.
 
 ## The plain model agent
 
@@ -371,7 +376,7 @@ The audit is blind only to a reader who has nothing but the packet. The saved co
 
 For each customer turn the agent appends the customer's message to its input list and sends one request. When the response holds function calls, it sends each one through the `tools` that `open` hands it, appends the result as a `function_call_output` and sends the next request. When the response holds no function call, its message is the reply. After six rounds of function calls in one turn, the next request sets `tool_choice: "none"`, so the model must reply. Every request goes through the `model` client that `open` hands it, so the code is the same live and on replay.
 
-- **Tools.** The tool list is `toolDefinitions` from `src/mcp.ts`, the list the MCP server returns from `tools/list`, mapped onto the API's function shape with `strict: false`. Strict mode would need every field required, and `check_policy` takes optional fields. A call to a name that is not one of the five, or with arguments that are not a JSON object, gets an `invalid_input` result and never reaches the shop, so the trace holds only the five names.
+- **Tools.** The tool list is `toolDefinitions` from `src/mcp.ts`, the list the MCP server returns from `tools/list`, mapped onto the API's function shape with `strict: false`. Strict mode would need every field required, and `check_policy` takes optional fields. A call to a name that is not one of the six, or with arguments that are not a JSON object, gets an `invalid_input` result and never reaches the shop, so the trace holds only the six names.
 - **State.** The request sets `store: false`, and the agent keeps the whole input list itself, including each response's output items as returned. Reasoning items carry their `encrypted_content`, so the model keeps its reasoning across function calls without OpenAI storing the conversation. Nothing random enters a request, so a replay sends byte-for-byte the requests it recorded.
 - **Live client.** `openaiModel` in `src/agents/openai.ts` posts the request body as it is to `https://api.openai.com/v1/responses` with `fetch` and returns the response body as it is. A recording is therefore the plain JSON that crossed the wire. It reads `OPENAI_API_KEY` when it is built and refuses to start without it, before anything is spent. An error answer stops the run with the HTTP status and the provider's message.
 - **Cost.** `costOf` prices each call from its `usage`: ordinary input, cached input, cache writes and output, at the rates in `PRICES`. Each price names its source page. The table covers the Standard tier, prompts up to 272K input tokens and 30-minute cache writes, the default. A call above 272K input tokens throws instead of being priced wrong.
@@ -403,7 +408,7 @@ Every reply must declare `open`, `resolved` or `refused`. The agent asks for the
 | Alternative | Verdict | Why |
 | --- | --- | --- |
 | A tag at the end of the text, such as `[status: resolved]`. | Rejected. | Nothing forces the tag to appear or to be spelled right, and the parser would have to strip it from the customer's text. |
-| A sixth function, `reply`, with `tool_choice: "required"`. | Rejected. | The tools would no longer be the MCP list. The trace and the shop would see a function that is not one of the five. |
+| A sixth function, `reply`, with `tool_choice: "required"`. | Rejected. | The tools would no longer be the MCP list. The trace and the shop would see a function that is not one of the shop's. |
 | A second call that classifies the reply. | Rejected. | It doubles the calls per turn and asks a second model to guess what the first one meant. |
 | A strict JSON schema on the message. | Chosen. | The API guarantees both fields and the enum, so a malformed status cannot reach the runner. Actions stay function calls, and speech stays the message. |
 
@@ -549,7 +554,7 @@ The method is the one above, in a checkout without the scored sets. The number i
 
 `sdkAgent` in `src/agents/sdk.ts` runs one non-streaming Vercel AI SDK loop on OpenAI and Anthropic. The two GPT entries let a tuning run compare this loop with the plain agent on the same models. The two Claude entries let a tuning run compare providers with the same loop and matching base input and output prices. The pairs are GPT-6 Luna with Claude Haiku 5.5 and GPT-6.2 Sol with Claude Sonnet 5.5.
 
-Both providers use the existing system prompt, five MCP tools, and low reasoning effort. A `prompt` option sends another prompt and adds its name to the agent's name, which is how the tuned Claude agents get theirs. The session runs tool calls in order and sends the results back with the conversation history. Each customer turn allows six tool rounds, followed by a request with tools forbidden. The final reply uses the provider's native structured output.
+Both providers use the existing system prompt, the six MCP tools, and low reasoning effort. A `prompt` option sends another prompt and adds its name to the agent's name, which is how the tuned Claude agents get theirs. The session runs tool calls in order and sends the results back with the conversation history. Each customer turn allows six tool rounds, followed by a request with tools forbidden. The final reply uses the provider's native structured output.
 
 Each SDK provider gets a custom `fetch` that hands its JSON request body to the session's `ModelClient` and returns the client's response body to the SDK. The same recorder, replay client, and spend guard cover both providers. Replay compares each body in call order, including any IDs and reasoning blocks carried forward from saved responses. Tests record and replay fresh sessions on both providers to check that request bodies match byte for byte.
 
@@ -595,7 +600,7 @@ The scored traces under `traces/` and `results/` and the recordings under `recor
 ## Limits
 
 - `check_policy` decides a `damage` topic as a claim that asks for no refund. A damage refund above the limit is rejected only by `file_request`.
-- No function can amend a filed damage claim to add a remedy preference. The tuning set has no case where the customer first names a preference after the agent files the claim.
+- The fake shop approves nothing and changes no order's status during a conversation. Every request a conversation filed therefore still awaits approval, and an amendment never meets `already_shipped` in a test, because the shop refuses the delivery change it would amend first.
 - A case that leaves `remedy` out matches a damage claim with any remedy, so the grader does not catch a remedy the customer never chose. The rubric's `requests` criterion does.
 - A return covers the whole order. An order that holds any commissioned item cannot be returned, even for its catalogue prints.
 - The refund of a cancellation, a return or a damage refund is the order total. The return postage that the customer pays is not deducted.

@@ -158,6 +158,51 @@ test("a request the function rejected is a blocked attempt, not a failure", asyn
   expect(result.blocked_attempts).toEqual(["return for SC-1005: window_closed", "return for SC-1004: not_found"]);
 });
 
+// Files one request, then amends it to each change in turn, as one reply.
+const filesThenAmends = (filed: ReturnType<typeof request>, ...changes: Record<string, unknown>[]) =>
+  scripted(async (tools) => {
+    await tools.call("file_request", filed);
+    for (const change of changes) {
+      await tools.call("amend_request", { order_id: filed.order_id, email: filed.email, request_id: "R-1", change });
+    }
+    return { text: "Your request is updated. Staff must approve it.", status: "resolved" };
+  });
+
+const claim = (order_id: string, remedy?: string) => request(order_id, { kind: "damage", description: "Torn.", remedy });
+
+test("an amended request is graded as it stands at the end, once", async () => {
+  const result = await gradeRun(filesThenAmends(claim("SC-1004"), { kind: "damage", remedy: "reprint" }), {
+    outcome: "resolved",
+    requests: [{ kind: "damage", order_id: "SC-1004", remedy: "reprint" }],
+  });
+
+  expect(result.failures).toEqual([]);
+  expect(passed(result)).toBe(true);
+});
+
+test("an amendment the customer never asked for is a wrong action, as a filing would be", async () => {
+  const result = await gradeRun(filesThenAmends(moveTo("Str. Exemplu 5, Iași"), { kind: "delivery_change", new_address: "Str. Greșită 99, Iași" }), {
+    outcome: "resolved",
+    requests: [{ kind: "delivery_change", order_id: "SC-1001", new_address: "Str. Exemplu 5, Iași" }],
+  });
+
+  expect(result.failures).toEqual([
+    { kind: "missing_request", detail: "delivery_change for SC-1001 Str. Exemplu 5, Iași" },
+    { kind: "unexpected_request", detail: "delivery_change for SC-1001 Str. Greșită 99, Iași" },
+  ]);
+  expect(tookWrongAction(result)).toBe(true);
+});
+
+test("an amendment the policy forbids is a blocked attempt, and the request stays as filed", async () => {
+  const result = await gradeRun(filesThenAmends(claim("SC-1007", "reprint"), { kind: "damage", remedy: "refund" }), {
+    outcome: "resolved",
+    requests: [{ kind: "damage", order_id: "SC-1007", remedy: "reprint" }],
+  });
+
+  expect(result.failures).toEqual([]);
+  expect(result.blocked_attempts).toEqual(["damage amendment for SC-1007: large_refund"]);
+});
+
 test("a forbidden phrase is a wrong action, with or without diacritics and capitals", async () => {
   const result = await gradeRun(says("Sigur: rambursare aprobată!", "refused"), {
     outcome: "refused",
