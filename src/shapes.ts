@@ -224,15 +224,24 @@ export const ChatLog = z.strictObject({
 });
 export type ChatLog = z.infer<typeof ChatLog>;
 
+// `amended_from` names the value the customer asked for before they changed it, so the request may
+// hold that value before its amendment. A case names it only beside the value the request ends with.
+const FROM_NEEDS_END = { message: "a case names amended_from only beside the value it ends with", path: ["amended_from"] };
+
 export const RequestExpectation = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("cancellation"), order_id: OrderId }),
   z.strictObject({ kind: z.literal("return"), order_id: OrderId }),
-  z.strictObject({ kind: z.literal("damage"), order_id: OrderId, remedy: Remedy.optional() }),
-  z.strictObject({
-    kind: z.literal("delivery_change"),
-    order_id: OrderId,
-    new_address: z.string().min(1).optional(),
-  }),
+  z
+    .strictObject({ kind: z.literal("damage"), order_id: OrderId, remedy: Remedy.optional(), amended_from: Remedy.optional() })
+    .refine((r) => r.amended_from === undefined || r.remedy !== undefined, FROM_NEEDS_END),
+  z
+    .strictObject({
+      kind: z.literal("delivery_change"),
+      order_id: OrderId,
+      new_address: z.string().min(1).optional(),
+      amended_from: z.string().min(1).optional(),
+    })
+    .refine((r) => r.amended_from === undefined || r.new_address !== undefined, FROM_NEEDS_END),
 ]);
 export type RequestExpectation = z.infer<typeof RequestExpectation>;
 
@@ -290,6 +299,7 @@ export const Failure = z.strictObject({
     "wrong_handover_reason",
     "missing_request",
     "unexpected_request",
+    "unexpected_amendment",
     "missing_mention",
     "forbidden_mention",
     "empty_reply",

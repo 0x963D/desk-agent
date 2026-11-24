@@ -1,5 +1,5 @@
 import { contracts, type ToolInput } from "./tools.ts";
-import { amended, type AgentTurn, type ObservedOutcome, type ToolCall, type ToolError, type ToolName, type Turn } from "./shapes.ts";
+import { amended, type AgentTurn, type Change, type ObservedOutcome, type ToolCall, type ToolError, type ToolName, type Turn } from "./shapes.ts";
 
 export const agentTurns = (turns: readonly Turn[]): AgentTurn[] =>
   turns.filter((turn) => turn.role === "agent");
@@ -9,22 +9,25 @@ const calls = <N extends ToolName>(turns: readonly Turn[], ...names: N[]) =>
     .flatMap((turn) => turn.tool_calls)
     .filter((call): call is ToolCall & { name: N } => (names as ToolName[]).includes(call.name));
 
+// A request on file when the conversation ends, with the changes it held before, the filed one first.
+export type OnFile = ToolInput<"file_request"> & { earlier: Change[] };
+
 // The requests on file when the conversation ends: each accepted file_request, with every accepted
 // amend_request applied to the request it names, in the order they were filed.
-export function filedRequests(turns: readonly Turn[]): ToolInput<"file_request">[] {
-  const onFile = new Map<string, ToolInput<"file_request">>();
+export function filedRequests(turns: readonly Turn[]): OnFile[] {
+  const onFile = new Map<string, OnFile>();
   for (const call of calls(turns, "file_request", "amend_request")) {
     if (!call.output.ok) continue;
     if (call.name === "file_request") {
       const { request_id } = contracts.file_request.output.parse(call.output.data);
-      onFile.set(request_id, contracts.file_request.input.parse(call.input));
+      onFile.set(request_id, { ...contracts.file_request.input.parse(call.input), earlier: [] });
       continue;
     }
     const { request_id } = contracts.amend_request.output.parse(call.output.data);
     const filed = onFile.get(request_id);
     if (!filed) throw new Error(`the trace amends ${request_id}, which no accepted file_request returned`);
     const { change } = contracts.amend_request.input.parse(call.input);
-    onFile.set(request_id, { ...filed, change: amended(filed.change, change) });
+    onFile.set(request_id, { ...filed, change: amended(filed.change, change), earlier: [...filed.earlier, filed.change] });
   }
   return [...onFile.values()];
 }

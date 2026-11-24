@@ -57,7 +57,15 @@ The business date is `2026-11-20`. Every policy window counts from that date, so
 
 A request names its `kind` and its `order_id`. The kinds are `cancellation`, `return`, `damage` and `delivery_change`. A `damage` request names `remedy`, `reprint` or `refund`, only when the customer says which one they want. The agent then files the claim with that remedy. When the customer does not choose, the agent files the claim without one and staff decide after a photo, so the case leaves `remedy` out. A case without `remedy` matches a claim with any remedy or none. A `delivery_change` request may add `new_address`, which is compared the same way as a phrase. The shop files one request of a kind per order, so a case names each kind at most once per order.
 
-The list names each request as it stands when the conversation ends. A customer who changes a filed request, such as one who names a reprint after the claim is on file or corrects the new address, gets that request amended, not a second one. The case names the request once, with the remedy or the address it ends with. An amendment the customer never asked for leaves a request the case does not name, which is a wrong action, as a filing would be.
+The list names each request as it stands when the conversation ends. A customer who changes a filed request, such as one who names a reprint after the claim is on file or corrects the new address, gets that request amended, not a second one. The case names the request once, with the remedy or the address it ends with, and names in `amended_from` the remedy or the address the customer asked for before they changed it.
+
+	  requests:
+	    - kind: delivery_change
+	      order_id: SC-1001
+	      new_address: Str. Exemplu 7, Iași
+	      amended_from: Str. Exemplu 5, Iași
+
+Every value an amended request held must be one the case names, so an amendment the customer never asked for is a wrong action, as an unrequested filing is. That covers an amendment of a claim whose case leaves `remedy` out, an amendment to a value the case does not name, and a filing with a value the customer never asked for that an amendment then replaced. A claim filed without a remedy chose nothing, so a customer who names a remedy only after it is on file needs no `amended_from`. A case names `amended_from` only beside the value the request ends with.
 
 A phrase matches when it appears inside one reply and no letter or digit touches it on either side, so `SC-1329` does not match `SC-13290`, and `card only` does not match `card` in one reply and `only` in the next. The comparison ignores capitals, diacritics and repeated spaces. Use a phrase only for a fact with one spelling, such as a tracking link, an order number or the number `14`. Do not use a phrase for a date, a status word or a sentence, because a correct agent can word those in many ways.
 

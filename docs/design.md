@@ -166,7 +166,7 @@ The requests on file are the accepted `file_request` calls in the turns, each wi
 | Store the derived requests in the conversation. | Rejected. | The copy repeats what the turns already hold, and a regrade would have to trust it. |
 | Derive the effects from the trace. | Chosen. | The trace is the single record. It holds the input that the function accepted, and a regrade reads nothing else. |
 
-A case's `requests` therefore names each request as it stands at the end. A claim filed without a remedy and amended to a reprint is one damage claim with `remedy: reprint`, never two.
+A case's `requests` therefore names each request as it stands at the end. A claim filed without a remedy and amended to a reprint is one damage claim with `remedy: reprint`, never two. `filedRequests` also returns the changes each request held before, which the grader checks against the case.
 
 Because `createBackend` returns only `Tools`, the runner has nothing else to read. A test runs a case against a backend that only answers calls and grades the saved trace.
 
@@ -188,7 +188,7 @@ The runner plays every customer turn until a handover appears, because a person 
 
 ## Contested point 4: what counts as a wrong action
 
-A conversation has a wrong action when a request on file at the end is one the case does not expect, or when a reply contains a phrase from `reply_never_mentions`. An amendment the customer never asked for leaves such a request, so it is a wrong action by the same rule as a filing. `WRONG_ACTIONS` in `src/grade.ts` is the one place that draws this line.
+A conversation has a wrong action when a request on file at the end is one the case does not expect, when an amended request held a value the case does not name, or when a reply contains a phrase from `reply_never_mentions`. An amendment the customer never asked for is a wrong action by the same rule as a filing. Grading only the end state missed two: a claim whose case leaves `remedy` out, amended to a refund nobody asked for, matched; and a refund nobody asked for, amended to the reprint the customer wanted, vanished. So each request on file keeps the changes it held, and every one of them must be the value the request ends with or the case's `amended_from`, the value the customer asked for before they changed it. A claim filed without a remedy chose nothing, and a case that names no value lets the filing hold any, so in those two only the amendments are checked. A failure here is `unexpected_amendment`. `WRONG_ACTIONS` in `src/grade.ts` is the one place that draws this line.
 
 The function enforces the policy, as the scope requires. A request that the policy forbids is therefore rejected and never filed. The summary reports such conversations as blocked attempts: the conversations in which `file_request` or `amend_request` was rejected with `policy_denied` or `not_found`. An amendment that names a request id the conversation never filed is `not_found`, so it counts too.
 
@@ -204,7 +204,7 @@ A wrong action that the function cannot catch is still caught by the grader. An 
 
 ## Contested point 5: how a filed request matches an expected one
 
-A request on file matches when its kind and its order number match, after its amendments. When the case names `remedy` or `new_address`, that field must match too. An address is compared after the same normalisation as a phrase: capitals, diacritics and repeated spaces are ignored.
+A request on file matches when its kind and its order number match, after its amendments. When the case names `remedy` or `new_address`, that field must match too. An amended request is then checked step by step, as [contested point 4](#contested-point-4-what-counts-as-a-wrong-action) says. An address is compared after the same normalisation as a phrase: capitals, diacritics and repeated spaces are ignored.
 
 | Alternative | Verdict | Why |
 | --- | --- | --- |
@@ -603,7 +603,8 @@ The scored traces under `traces/` and `results/` and the recordings under `recor
 
 - `check_policy` decides a `damage` topic as a claim that asks for no refund. A damage refund above the limit is rejected only by `file_request`.
 - The fake shop approves nothing and changes no order's status during a conversation. Every request a conversation filed therefore still awaits approval, and an amendment never meets `already_shipped` in a test, because the shop refuses the delivery change it would amend first.
-- A case that leaves `remedy` out matches a damage claim with any remedy, so the grader does not catch a remedy the customer never chose. The rubric's `requests` criterion does.
+- A case that leaves `remedy` out matches a damage claim filed with any remedy, so the grader does not catch a remedy the customer never chose at filing. The rubric's `requests` criterion does. An amendment of that claim is caught.
+- `amended_from` names one earlier value, so no case can expect a customer who changes the same request twice, each time to a new value.
 - A return covers the whole order. An order that holds any commissioned item cannot be returned, even for its catalogue prints.
 - The refund of a cancellation, a return or a damage refund is the order total. The return postage that the customer pays is not deducted.
 - A duplicate is a second request of the same kind for the same order. A rejected request does not count.
