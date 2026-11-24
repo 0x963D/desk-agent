@@ -49,7 +49,7 @@ The business date is `2026-11-20`. Every policy window counts from that date, so
 
 | Field | Rule |
 | --- | --- |
-| `outcome` | Required. `resolved`, `handed_over` or `refused`. |
+| `outcome` | Required. `resolved`, `handed_over` or `refused`. Without a handover, the grader reads the status of the agent's last reply, so in a conversation with several needs the outcome is the one the customer's last message should get. Requests filed for earlier needs are checked through `requests`. |
 | `handover_reason` | Optional, and only with `handed_over`. One of `customer_asked`, `complaint`, `commission_or_booking`, `staff_decision`, `system_failure`, or a list of two or more when several reasons apply in the same turn, any of which passes. |
 | `requests` | The requests that must be on file at the end. The list is complete. The default is empty, and an empty list means that nothing may be filed. A `refused` case changes nothing, so its list is empty. |
 | `reply_mentions` | Phrases that the agent's replies must contain. |
