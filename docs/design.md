@@ -599,6 +599,47 @@ Turn times are nearest-rank, from model time only. Sol's wrong action in its fir
 
 **Spend.** The 20 live runs spent $7.04 by the recorder's count: $0.11 on Luna and $6.93 on Sol. The 18 plain runs spent $6.36, $0.10 on Luna and $6.26 on Sol, and the two framework runs $0.68. No screen of single requests was run, because the stop condition was met before a second step was written. Every run was made one after another in one checkout.
 
+##### Claude
+
+**Noise.** Step 0 sends the step 4 rules of the first Claude climb at effort `low`. Like the GPT step 0, it was measured before and after the case fix. After the fix Haiku passed 31, 32 and 30, and Sonnet 31, 29 and 31. A step led by Haiku had to pass 33 in every Haiku run with every Sonnet run at 29 or more. A step led by Sonnet had to pass 32 in every Sonnet run with every Haiku run at 30 or more.
+
+| Step | Change | Haiku, per run | Sonnet, per run | Sonnet reflex handovers | Verdict |
+| --- | --- | --- | --- | --- | --- |
+| 0, before the case fix | The first climb's step 4 rules, effort `low`. | 29, 31, 29 | 30, 29, 28 | 9, 11, 9 | Reference. |
+| 1, before the case fix | Effort `medium` for both. | 36, 31, 34 | 26, 28, 26 | 15, 10, 14 | Reverted. Haiku's 31 does not beat step 0's highest, and Sonnet fell below its lowest. |
+| 2, before the case fix | Effort `medium` for Haiku only. | 33, 35, 33 | not run | - | Stopped when the case fault was found. |
+| 0, after the case fix | Step 0, measured again. | 31, 32, 30 | 31, 29, 31 | 12, 10, 7 | Reference. |
+| 2 again | Effort `medium` for Haiku only. | 37, 32, 36 | 30, 31, 30 | 8, 10, 10 | Reverted. Haiku's 32 equals step 0's highest. |
+| 3 | Effort `high` for Sonnet only. | 32, 33, 30 | 26, 24, 27 | 15, 16, 17 | Reverted. Sonnet fell below step 0's lowest. |
+| 4 | Effort `medium` for Haiku, and four rules under a heading "When to hand over": call `hand_over` only for a listed reason with a real summary, never as a test, a placeholder or a way to end the turn; a refusal from a function is the answer, so explain it and reply `refused`; a delivery change after shipping is the exception and goes to a person with `staff_decision`; a lookup that finds no order is `refused`. | 37, 37, 32 | 31, 30, 33 | 12, 12, 10 | Reverted. Haiku's 32 equals step 0's highest, and two Sonnet runs are below 32. |
+
+Step 4 was the fourth reverted step in a row, so the climb stopped there. Step 1 counts toward the four, as the climber wrote down before step 3 ran.
+
+**Root causes.** The failing traces of each run were read before the next change.
+
+- Sonnet still calls `hand_over` as a reflex, in 7 to 12 conversations per run at step 0. Effort `high` raised it to 15 to 17. A screen before step 3 had re-sent 16 single requests that led to a reflex handover, and at effort `high` only 4 of them did so again. Whole conversations did not follow the screen. Step 4's rule against the reflex left it at 10 to 12, as the first climb's step 1 had. A probe without the structured-output constraint still drew the reflex in 14 of 27 requests, against 22 of 27 with it, so the loop's output format is not the cause.
+- Sonnet hands over after a function refuses: a cancellation in production, the two commissioned-work returns and the pasted system message, 0 of 3 passing at step 0 and again at step 4. Step 4's rule that a refusal is the answer did not change them.
+- Haiku refuses a delivery change after shipping instead of handing it over (`en-new-address-after-shipping` and `en-redirect-after-dispatch`, 0 of 3 at step 0), and leaves a failed lookup `open` (`ro-mail-diferit-la-comanda`, 0 of 3). Step 4 fixed all three in 3 of 3 runs.
+- Haiku answers in Romanian after a customer switches to English to give the email (`ro-anulare-comanda-platita`), in every run of every step, as Luna does. It says a colleague will take over without calling `hand_over` (`ro-vreau-sa-vorbesc-cu-cineva`) in every run.
+- At effort `medium` Haiku files a damage claim and then offers the customer a choice of remedy, leaving the conversation `open` (`ro-dunga-pe-print`, 3 of 3 at step 4). Those new failures took the place of the ones step 4 fixed in its third run.
+
+**Result.** No step was kept, so the tuned Claude agents send the first climb's step 4 rules at effort `low`, as before the second climb. The same rule stopped both vendors at step 0: GPT because its step 0 already met the stop condition, Claude after four reverted steps. Step 4 raised Haiku's mean from 31.0 to 35.3 cases and Sonnet's from 30.3 to 31.3, but one Haiku run of 32 and two Sonnet runs under 32 kept it below the bar. It is the rule a further climb would start from.
+
+**The frozen agents** use the step 0 prompt. The committed recordings of `sdk-claude-haiku-5-5-tuned` and `sdk-claude-sonnet-5-5-tuned` are the third step 0 run after the case fix: Haiku 30/42 and Sonnet 31/42. `sdk-claude-haiku-5-5` and `sdk-claude-sonnet-5-5`, which send `SYSTEM_PROMPT` alone, each have one recorded run: Haiku 31/42 and Sonnet 27/42, with 17 reflex handovers. `pnpm replay` reproduces all four grades.
+
+| Agent | Run | Passed | Resolved correctly | Handed over | Wrong actions | Blocked attempts | Median turn | 95th percentile | Cost per conversation |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `sdk-claude-haiku-5-5-tuned` | step 0 again, 1 | 31/42 | 16/42 | 7/42 | 0 | 1 | 2,222 ms | 4,781 ms | $0.0021 |
+| `sdk-claude-haiku-5-5-tuned` | step 0 again, 2 | 32/42 | 15/42 | 8/42 | 0 | 1 | 2,285 ms | 4,706 ms | $0.0021 |
+| `sdk-claude-haiku-5-5-tuned` | step 0 again, 3, committed | 30/42 | 15/42 | 11/42 | 0 | 1 | 2,346 ms | 5,068 ms | $0.0022 |
+| `sdk-claude-sonnet-5-5-tuned` | step 0 again, 1 | 31/42 | 15/42 | 20/42 | 0 | 0 | 2,862 ms | 10,235 ms | $0.0446 |
+| `sdk-claude-sonnet-5-5-tuned` | step 0 again, 2 | 29/42 | 14/42 | 22/42 | 1 | 0 | 2,941 ms | 8,706 ms | $0.0470 |
+| `sdk-claude-sonnet-5-5-tuned` | step 0 again, 3, committed | 31/42 | 17/42 | 20/42 | 0 | 0 | 2,996 ms | 8,203 ms | $0.0480 |
+| `sdk-claude-haiku-5-5` | 1, committed | 31/42 | 15/42 | 11/42 | 0 | 1 | 2,187 ms | 4,659 ms | $0.0021 |
+| `sdk-claude-sonnet-5-5` | 1, committed | 27/42 | 12/42 | 24/42 | 1 | 1 | 3,058 ms | 10,248 ms | $0.0469 |
+
+**Spend.** The 41 live runs spent $38.95 by the recorder's count: $2.00 on Haiku and $36.95 on Sonnet. The screens, the probe and two runs stopped part way, one at the case fault and one at a pause, spent $2.19 more, for $41.14 in all. Every run was made one after another in one checkout.
+
 ## The AI SDK agent
 
 `sdkAgent` in `src/agents/sdk.ts` runs one non-streaming Vercel AI SDK loop on OpenAI and Anthropic. The two GPT entries let a tuning run compare this loop with the plain agent on the same models. The two Claude entries let a tuning run compare providers with the same loop and matching base input and output prices. The pairs are GPT-6 Luna with Claude Haiku 5.5 and GPT-6.2 Sol with Claude Sonnet 5.5.
