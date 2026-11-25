@@ -4,7 +4,7 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative } from "node:path";
 import { agents } from "./agents/index.ts";
 import { loadSplit, readConversations, unlessMissing, writeJson } from "./files.ts";
-import { readLedger, scoredRunDir } from "./ledger.ts";
+import { hashCaseFiles, readLedger, scoredRunDir, type LedgerEntry } from "./ledger.ts";
 import { AuditKey, Criterion, type Conversation, type ScoredSet, type Split, type TestCase, type Turn } from "./shapes.ts";
 import { handoverOf } from "./trace.ts";
 
@@ -129,6 +129,8 @@ export function unplayedOf(conversation: Conversation, cases: readonly TestCase[
   return testCase.turns.slice(played.length);
 }
 
+// The newest scored run of each model agent on the set's current case files. A run on older case
+// files played cases that may since have changed or moved to another set, so a reader never sees it.
 async function modelRuns(root: string, set: ScoredSet): Promise<Source[]> {
   const sources: Source[] = [];
   const casesOf = new Map<Split, Promise<TestCase[]>>();
@@ -136,8 +138,13 @@ async function modelRuns(root: string, set: ScoredSet): Promise<Source[]> {
     if (!casesOf.has(split)) casesOf.set(split, loadSplit(root, split).then((data) => data.cases));
     return casesOf.get(split)!;
   };
+  const current = await hashCaseFiles(root, set);
+  const newest = new Map<string, LedgerEntry>();
   for (const entry of await readLedger(root)) {
-    if (entry.summary.split !== set || !agents.get(entry.agent)?.liveModel) continue;
+    if (entry.summary.split !== set || entry.cases_sha256 !== current || !agents.get(entry.agent)?.liveModel) continue;
+    newest.set(entry.agent, entry);
+  }
+  for (const entry of newest.values()) {
     const conversations = await readConversations(scoredRunDir(root, entry.run));
     if (conversations.length !== entry.summary.cases) {
       throw new Error(
@@ -154,7 +161,7 @@ async function modelRuns(root: string, set: ScoredSet): Promise<Source[]> {
       })),
     );
   }
-  if (sources.length === 0) throw new Error(`the ledger names no scored run of a model agent on the ${set} set`);
+  if (sources.length === 0) throw new Error(`the ledger names no scored run of a model agent on the ${set} set's current cases`);
   return sources;
 }
 
