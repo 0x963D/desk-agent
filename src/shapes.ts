@@ -344,7 +344,7 @@ export const Verdict = z
     message: "acceptable is true exactly when no criterion fails",
     path: ["acceptable"],
   })
-  .refine((v) => v.acceptable || /\bturn \d+\b/i.test(v.note), {
+  .refine((v) => v.acceptable || /\bturns? \d+\b/i.test(v.note), {
     message: "a note on a failure names the turn, such as turn 4",
     path: ["note"],
   });

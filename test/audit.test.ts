@@ -141,13 +141,14 @@ const lines = (...verdicts: unknown[]) => verdicts.map((v) => JSON.stringify(v))
 
 test("a verdict file that judges every conversation loads", () => {
   const loaded = parseVerdicts(
-    `${lines(verdict("c"), verdict("a", ["facts"], "Turn 4 states a time no function gave."), verdict("b"))}\n`,
+    `${lines(verdict("c"), verdict("a", ["facts"], "Turn 4 states a time no function gave."), verdict("b", ["reply"], "Turns 2 and 4 answer in Romanian."))}\n`,
     "reader.jsonl",
     IDS,
   );
 
   expect([...loaded.keys()].sort()).toEqual(IDS);
   expect(loaded.get("a")).toMatchObject({ acceptable: false, facts: false, outcome: true });
+  expect(loaded.get("b")).toMatchObject({ acceptable: false, reply: false });
 });
 
 test.each([
