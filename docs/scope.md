@@ -102,7 +102,7 @@ The set has 26 Romanian conversations and 16 English conversations. At least 9 R
 It was written as two halves of 19 and 18 conversations by two authors, and every category appears in both. The second half was the validation set until the maintainer saw its expected outcomes before changing the policy on complaints and damage claims, so it moved into tuning. Two sets follow it, each by another author.
 
 - **The tuning set** is for changing prompts and code.
-- **The validation set** lives in `cases/held-out/` and `fixtures/held-out.yaml`. It has 18 conversations and was the final set, so its author saw no other set, but its scores were published. It checks a change after tuning, and nobody reads one of its conversations to improve the agent.
-- **The final set** is only for scoring. A new author writes it without seeing the tuning set or the validation set, and nobody reads it before it is scored. It lives in `cases/final/` and `fixtures/final.yaml`.
+- **The validation set** lives in `cases/held-out/` and `fixtures/held-out.yaml`. It has 36 conversations: the 18 that were the final set, whose author saw no other set and whose scores were published, and 18 by another author who saw neither other set. It checks a change after tuning, and nobody reads one of its conversations to improve the agent.
+- **The final set** is only for scoring. It has 36 conversations by a new author, who saw neither the tuning set nor the validation set, and nobody read it before it was scored. It lives in `cases/final/` and `fixtures/final.yaml`.
 
-Every scoring run is recorded with its commit and its set. The README quotes the final set. Until the final set is scored, the README's table is the validation set's and says so.
+Every scoring run is recorded with its commit and its set. The README quotes the final set.
