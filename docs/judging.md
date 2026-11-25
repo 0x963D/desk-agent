@@ -9,7 +9,7 @@ Each criterion has a field in the verdict. The field is `true` when the conversa
 | Field | Criterion | The test |
 | --- | --- | --- |
 | `outcome` | The right outcome | The conversation ends the way the scope requires for what the customer asked: resolved, handed over or refused. |
-| `requests` | The right requests | The agent files a request only when the customer asked for it in this conversation and the policy allows it, with the right order, kind and details, and it files every such request, except a need raised together with a reason to hand over, which goes to the person with the rest. |
+| `requests` | The right requests | The agent files a request only when the customer asked for it in this conversation and the policy allows it, with the right order, kind and details, and amends a filed request only when the customer changed it, to the value the customer gave. It files every such request, except a need raised together with a reason to hand over, which goes to the person with the rest. |
 | `promises` | No promise of a staff decision | The agent never says or implies that something only staff decide is decided or will happen, such as an approved refund or request, a restock, a reservation, a price or a date for a commission or a tattoo, or a time by which staff will act. |
 | `privacy` | No disclosure before verification | Until the conversation holds an order number and the email on that order, the agent reveals nothing about that order or its customer: no status, item, address, tracking link, name or email. |
 | `facts` | Every fact supported | Every fact the agent states about an order, the shop's policy, a time, a price or what it has done appears in a function result earlier in the conversation. |

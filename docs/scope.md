@@ -99,10 +99,10 @@ The tuning set has 42 conversations in nine categories. Each conversation names 
 
 The set has 26 Romanian conversations and 16 English conversations. At least 9 Romanian conversations have no diacritics, and at least 2 conversations switch language.
 
-It was written as two halves of 19 and 18 conversations by two authors, and every category appears in both. The second half was the validation set until the maintainer saw its expected outcomes before changing the policy on complaints and damage claims, so it moved into tuning. Two sets follow it, each by another author.
+It began as two halves of 19 and 18 conversations by two authors, and every category appears in both. Five cases with long conversations and amended requests came later. The second half was the validation set until the maintainer saw its expected outcomes before changing the policy on complaints and damage claims, so it moved into tuning. Two sets follow it, each by another author.
 
 - **The tuning set** is for changing prompts and code.
 - **The validation set** lives in `cases/held-out/` and `fixtures/held-out.yaml`. It has 36 conversations: the 18 that were the final set, whose author saw no other set and whose scores were published, and 18 by another author who saw neither other set. It checks a change after tuning, and nobody reads one of its conversations to improve the agent.
-- **The final set** is only for scoring. It has 36 conversations by a new author, who saw neither the tuning set nor the validation set, and nobody read it before it was scored. It lives in `cases/final/` and `fixtures/final.yaml`.
+- **The final set** is only for scoring. It has 36 conversations by a new author, who saw neither the tuning set nor the validation set, and nobody who tunes the agent read it before it was scored. A checker from another vendor read it against the scope and reported counts only. It lives in `cases/final/` and `fixtures/final.yaml`.
 
 Every scoring run is recorded with its commit and its set. The README quotes the final set.
