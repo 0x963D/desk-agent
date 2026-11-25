@@ -21,7 +21,7 @@ flowchart LR
 ```
 
 - **Six functions, behind a real MCP server:** order lookup, account lookup, policy check, file a request for staff approval, amend a pending request, and hand over to a person. The functions enforce the policy and the identity check themselves. A request the policy forbids fails inside the function, whatever the model was told.
-- **The agent** is about 120 lines of plain function calling, plus a 47-line system prompt, with no agent framework, on two models from one vendor: a cheaper one (`plain-gpt-6-luna`) and a stronger one (`plain-gpt-6.2-sol`). Both use the same code and the same prompt. The prompt says how to behave and holds no shop facts, which come from the functions.
+- **The agent** is about 120 lines of plain function calling, plus a 45-line system prompt, with no agent framework, on two models from one vendor: a cheaper one (`plain-gpt-6-luna`) and a stronger one (`plain-gpt-6.2-sol`). Both use the same code and the same prompt. The prompt says how to behave and holds no shop facts, which come from the functions.
 - **A comparison loop** (`sdk-*`) runs the same prompt and functions through the AI SDK. It runs on the two GPT models and on two Claude models at the same prices, so the framework and the vendor can each be measured. The `-tuned` Claude agents add one section, tuned for them, to the end of the shared prompt.
 - **The runner** plays each case through the same session and MCP path a live chat uses. **The grader** checks the outcome, the requests on file, exact phrases and the reply language. The requests and any handover come from the accepted function calls in the trace. Only the choice between resolved and refused comes from the status the agent declares with each reply.
 - **The ledger** records every scoring run with its commit and a hash of its cases and its code. **The report** grades every saved run again and refuses to print a number that no longer matches its ledger line.
@@ -30,113 +30,121 @@ flowchart LR
 
 ## How it was measured
 
-There are three sets. Each set is written by a different author, each a language model working from the scope. The tuning set covers every category of [the test plan](docs/scope.md#test-plan).
+There are three sets. Each set is written by a different author, each a language model working from the scope, and a model from another vendor checked each new scored set against the scope. The tuning set covers every category of [the test plan](docs/scope.md#test-plan).
 
 | Set | Conversations | Used for |
 | --- | ---: | --- |
-| Tuning, `cases/tuning/` | 42 | Changing the prompt and the code. It holds the first tuning set and the former validation set, whose expected outcomes reached the person who later changed the policy, and five later cases with long conversations and amended requests. |
-| Validation, `cases/held-out/` | 18 | Checking a change after tuning. It is the former final set, 11 Romanian and 7 English. Its author saw neither other set, and nobody who tuned the agent has read it, but its scores were published. |
-| Final, `cases/final/` | none yet | Scoring only. A new author writes it from the scope, and nobody who tunes the agent reads it. |
+| Tuning, `cases/tuning/` | 42 | Changing the prompt and the code. It holds the first tuning set and the former validation set, whose expected outcomes reached the person who later changed the policy, and five later cases with long conversations and amended requests. 26 Romanian and 16 English. |
+| Validation, `cases/held-out/` | 36 | Checking a change after tuning. It holds the former final set, whose scores were published, and 18 new cases from another author. 22 Romanian and 14 English. Nobody who tuned the agent has read it. |
+| Final, `cases/final/` | 36 | Scoring only. A new author wrote it from the scope and saw neither other set. 21 Romanian and 15 English. Nobody who tuned the agent has read it. |
 
-In the earlier runs, every model agent ran each scored set three times from a clean tree. One run moves by a case or two, so the tables report the total, the share and the lowest and highest count in one run.
+Every model agent ran each scored set three times from a clean tree. One run moves by a case or two, so the tables report the total, the share and the lowest and highest count in one run.
 
 ## Results
 
-These scores come from runs on the earlier sets, before the sets moved, and use the names those sets had then. The earlier final set is today's validation set. The earlier validation set and the earlier 19-conversation tuning set are today's tuning set. Every agent is scored again on the current sets before these numbers are replaced.
+On the final set, 36 conversations scored three times for each agent, by the automatic grader:
 
-On the earlier final set, by the automatic grader:
+- **The stronger GPT model passed 104 of 108 conversations (34 to 35 per run), and the cheaper one 99 of 108 (32 to 34).** The keyword baseline passed 12 of 36.
+- **The GPT agents took no wrong action the grader can detect** in 864 scored conversations, across both scored sets and both loops. The Claude agents took 6 in 864, each a request the case did not expect. Every forbidden request any agent tried was refused inside the function.
+- **The stronger model costs about 55 times as much per conversation** ($0.0223 against $0.0004), with a median model time per turn of 2.3 s against 1.8 s.
+- **On the validation set both GPT models passed 102 of 108.**
+- **The Claude models trail at the same prices.** With the shared prompt alone, both pass 74 of 108 final conversations. With their tuned section, the larger passes 82 and the smaller 80.
 
-- **The cheaper model passed 52 of 54 conversations (17 to 18 per run), and the stronger one 51 of 54 (17 per run).** The keyword baseline passed 10 of 18.
-- **No model agent took a wrong action the grader can detect, and none tried a forbidden request,** in 108 final conversations or 108 validation conversations. The grader cannot see a false promise. Neither blind reader below found one on the final set.
-- **The stronger model costs about 70 times as much per conversation** ($0.0147 against $0.0002), with a median model time per turn of 2.2 s against 2.45 s.
-- On the earlier validation set both models passed 47 of 54.
+The grader cannot see a false promise, a fact with no source or a handover made too early. Two readers judged the newest final run of each of the eight model agents, 288 conversations, against [a rubric](docs/judging.md), without knowing which agent wrote each one. Each conversation showed any customer messages that a handover cut off, so a reader could judge an early handover. Both readers are language models from vendors other than the agents' two vendors. Reader G judged all 288. Reader M judged the first 112 of the shuffled packet before its quota ran out.
 
-The grader cannot see a false promise, a fact with no source or a handover made too early. Two readers judged all 108 final conversations against [a rubric](docs/judging.md) without knowing which agent wrote each one. Each conversation showed any customer messages that a handover cut off, so a reader could judge an early handover. Both are language models from vendors other than the agents' vendor.
+| Acceptable on the final set, newest run | Automatic grader | Blind reader G (Grok 4.7) | Blind reader M (Gemini 4 Hydrogen) |
+| --- | ---: | ---: | ---: |
+| `plain-gpt-6-luna` | 32/36 | 30/36 | 11/14 |
+| `plain-gpt-6.2-sol` | 34/36 | 32/36 | 9/9 |
+| `sdk-gpt-6-luna` | 30/36 | 28/36 | 12/16 |
+| `sdk-gpt-6.2-sol` | 35/36 | 31/36 | 16/17 |
+| `sdk-claude-haiku-5-5` | 23/36 | 19/36 | 6/11 |
+| `sdk-claude-haiku-5-5-tuned` | 27/36 | 23/36 | 16/18 |
+| `sdk-claude-sonnet-5-5` | 23/36 | 20/36 | 9/16 |
+| `sdk-claude-sonnet-5-5-tuned` | 26/36 | 25/36 | 8/11 |
 
-| Acceptable on the earlier final set | Cheaper model | Stronger model |
-| --- | ---: | ---: |
-| Automatic grader (passed every check) | 52/54 | 51/54 |
-| Blind reader G (Grok 4.7) | 40/54 | 48/54 |
-| Blind reader M (Gemini 3.8 Flash) | 47/54 | 54/54 |
-
-- **Both readers put every needless or early handover and every reply in the wrong language on the cheaper model:** 7 handovers and 3 replies by reader G, 4 and 3 by reader M. Reader G also found facts with no source in a function result on both models, 4 and 6.
-- **The grader's tie hides a gap.** Both readers put the stronger model 7 to 8 conversations ahead.
-- **The readers agree with each other on 95 of 108 conversations** (Cohen's kappa 0.47). They agree with the grader on 87 and 100. Reader G is the stricter one.
+- **Reader G rejected 34 conversations the grader passed,** and accepted 12 the grader failed. Its most common failure is a needless or early handover, 54 in all, 26 of them on the two larger Claude agents.
+- **Reader G found 2 false promises, both from the untuned smaller Claude model,** and 15 facts with no source in a function result, 9 of them on the smaller Claude model. Neither reader found a disclosure before verification.
+- **The readers agree with each other on 107 of the 112 conversations both judged** (Cohen's kappa 0.88). Reader G agrees with the grader on 242 of 288 (kappa 0.57), and reader M on 101 of 112 (kappa 0.70). Reader G is the stricter one.
 - The readers are models, not people. A labelled human sample is the next check.
 
-`pnpm audit:agreement --key results/audit/final/key.json results/audit/final/reader-g.jsonl results/audit/final/reader-m.jsonl` reproduces these numbers from the committed verdicts.
+`pnpm audit:agreement --key results/audit/final/key.json --partial results/audit/final/reader-g.jsonl results/audit/final/reader-m.jsonl` reproduces these numbers from the committed verdicts. The blind reading of the earlier final set, before the sets moved, is in `results/audit/earlier-final/`.
 
-**On these earlier numbers, the stronger model is the one to ship.** It costs about 1.5 cents a conversation. Each failure the readers find on the cheaper model is visible to the customer, and each one has to be fixed and measured on the tuning set before the cheaper model is worth its saving.
+**The stronger GPT model is the one to ship.** The grader and reader G both put it ahead of the cheaper one, by 5 conversations over three runs and by 2 on the newest run, and reader M accepted all 9 of its conversations that it read. It costs about 2 cents a conversation. The plain loop and the AI SDK loop score alike on it, so the plain loop stays.
 
-[The final failure review](results/final-failures.md) traces every failure the grader found to its root cause. [The validation review](results/held-out-failures.md) does the same for the validation set. Tuning is recorded step by step in [the design](docs/design.md#tuning), and [FAILURES.md](FAILURES.md) covers the tuning set.
+[The final failure review](results/final-failures.md) and [the validation review](results/held-out-failures.md) trace every failure the grader found to its root cause on the sets as they were before they moved. Tuning is recorded step by step in [the design](docs/design.md#tuning), and [FAILURES.md](FAILURES.md) covers the tuning set.
 
 This table is the output of `pnpm report --markdown`, and `pnpm check` fails when it differs. The keyword baseline is deterministic, so it has one run per set.
 
 <!-- report table: start -->
 | agent | runs | conversations | passed every check | resolved correctly | handover rate | wrong-action rate | blocked attempts | median turn | p95 turn | cost per conversation | code | latest commit | times scored |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | ---: |
-| rule-based | 1 | 18 | 10/18 (56%), per run 10 | 4/18 (22%), per run 4 | 11/18 (61%), per run 11 | 0/18 (0%), per run 0 | 3/18 (17%), per run 3 | 0.16 ms | 1.06 ms | $0.0000 | 421a5b33baa2 | 0833d3f | 1 |
-| plain-gpt-6-luna | 3 | 54 | 52/54 (96%), per run 17–18 | 20/54 (37%), per run 6–7 | 19/54 (35%), per run 6–7 | 0/54 (0%), per run 0 | 0/54 (0%), per run 0 | 2452.14 ms | 4818.32 ms | $0.0002 | 421a5b33baa2 | 9e0edf2 | 3 |
-| plain-gpt-6.2-sol | 3 | 54 | 51/54 (94%), per run 17 | 21/54 (39%), per run 7 | 18/54 (33%), per run 6 | 0/54 (0%), per run 0 | 0/54 (0%), per run 0 | 2196.27 ms | 5002.05 ms | $0.0147 | 421a5b33baa2 | 74fa765 | 3 |
-| sdk-gpt-6-luna | 3 | 54 | 52/54 (96%), per run 16–18 | 20/54 (37%), per run 6–7 | 18/54 (33%), per run 6 | 0/54 (0%), per run 0 | 0/54 (0%), per run 0 | 2620.21 ms | 5416.79 ms | $0.0002 | 3fdd6c2c2ee8 | 561f740 | 3 |
-| sdk-gpt-6.2-sol | 3 | 54 | 51/54 (94%), per run 17 | 21/54 (39%), per run 7 | 18/54 (33%), per run 6 | 0/54 (0%), per run 0 | 1/54 (2%), per run 0–1 | 2956.39 ms | 6123.97 ms | $0.0147 | 3fdd6c2c2ee8 | 551c3cd | 3 |
-| sdk-claude-haiku-5-5 | 3 | 54 | 40/54 (74%), per run 13–14 | 16/54 (30%), per run 5–6 | 14/54 (26%), per run 4–5 | 0/54 (0%), per run 0 | 0/54 (0%), per run 0 | 2118.46 ms | 5048.75 ms | $0.0016 | 3fdd6c2c2ee8 | e416e07 | 3 |
-| sdk-claude-sonnet-5-5 | 3 | 54 | 42/54 (78%), per run 13–15 | 15/54 (28%), per run 5 | 28/54 (52%), per run 9–10 | 0/54 (0%), per run 0 | 0/54 (0%), per run 0 | 3051.52 ms | 7602.14 ms | $0.0318 | 3fdd6c2c2ee8 | df01ff4 | 3 |
-| sdk-claude-haiku-5-5-tuned | 3 | 54 | 40/54 (74%), per run 13–14 | 16/54 (30%), per run 4–6 | 16/54 (30%), per run 5–6 | 0/54 (0%), per run 0 | 0/54 (0%), per run 0 | 2527.07 ms | 5610.62 ms | $0.0016 | 4c539744b7ad | efa5484 | 3 |
-| sdk-claude-sonnet-5-5-tuned | 3 | 54 | 48/54 (89%), per run 16 | 20/54 (37%), per run 6–7 | 22/54 (41%), per run 7–8 | 0/54 (0%), per run 0 | 1/54 (2%), per run 0–1 | 2887.79 ms | 7649.85 ms | $0.0333 | 4c539744b7ad | f8c45a0 | 3 |
+| rule-based | 1 | 36 | 12/36 (33%), per run 12 | 2/36 (6%), per run 2 | 21/36 (58%), per run 21 | 0/36 (0%), per run 0 | 11/36 (31%), per run 11 | 0.12 ms | 0.40 ms | $0.0000 | 992cfa5cb859 | 85445c9 | 2 |
+| plain-gpt-6-luna | 3 | 108 | 99/108 (92%), per run 32–34 | 44/108 (41%), per run 14–15 | 30/108 (28%), per run 10 | 0/108 (0%), per run 0 | 3/108 (3%), per run 1 | 1790.42 ms | 3464.66 ms | $0.0004 | 992cfa5cb859 | 9a4b9c3 | 6 |
+| plain-gpt-6.2-sol | 3 | 108 | 104/108 (96%), per run 34–35 | 45/108 (42%), per run 15 | 32/108 (30%), per run 10–11 | 0/108 (0%), per run 0 | 13/108 (12%), per run 4–5 | 2271.31 ms | 5319.66 ms | $0.0223 | 992cfa5cb859 | 3652d0d | 6 |
+| sdk-gpt-6-luna | 3 | 108 | 96/108 (89%), per run 30–34 | 40/108 (37%), per run 12–14 | 32/108 (30%), per run 10–12 | 0/108 (0%), per run 0 | 4/108 (4%), per run 1–2 | 1804.38 ms | 3578.09 ms | $0.0004 | 992cfa5cb859 | f666ffc | 6 |
+| sdk-gpt-6.2-sol | 3 | 108 | 104/108 (96%), per run 34–35 | 45/108 (42%), per run 15 | 32/108 (30%), per run 10–11 | 0/108 (0%), per run 0 | 11/108 (10%), per run 3–5 | 2276.44 ms | 5371.94 ms | $0.0217 | 992cfa5cb859 | 1041821 | 6 |
+| sdk-claude-haiku-5-5 | 3 | 108 | 74/108 (69%), per run 23–27 | 35/108 (32%), per run 11–13 | 37/108 (34%), per run 9–14 | 1/108 (1%), per run 0–1 | 4/108 (4%), per run 1–2 | 2177.85 ms | 5864.47 ms | $0.0029 | 992cfa5cb859 | d8799e8 | 6 |
+| sdk-claude-sonnet-5-5 | 3 | 108 | 74/108 (69%), per run 23–27 | 34/108 (31%), per run 10–13 | 60/108 (56%), per run 18–21 | 0/108 (0%), per run 0 | 9/108 (8%), per run 2–4 | 2361.61 ms | 7483.57 ms | $0.0544 | 992cfa5cb859 | 2e4c155 | 6 |
+| sdk-claude-haiku-5-5-tuned | 3 | 108 | 80/108 (74%), per run 26–27 | 29/108 (27%), per run 9–10 | 33/108 (31%), per run 10–12 | 0/108 (0%), per run 0 | 4/108 (4%), per run 1–2 | 2085.80 ms | 5026.62 ms | $0.0029 | 992cfa5cb859 | 61522b7 | 6 |
+| sdk-claude-sonnet-5-5-tuned | 3 | 108 | 82/108 (76%), per run 26–29 | 36/108 (33%), per run 11–14 | 51/108 (47%), per run 14–20 | 1/108 (1%), per run 0–1 | 10/108 (9%), per run 3–4 | 2668.27 ms | 8158.44 ms | $0.0575 | 992cfa5cb859 | 0cb7bab | 6 |
 
-Final set, cases/final. Each row covers every scored run of one agent with the same cases and the same code as its latest run, each regraded and matched to its line in results/ledger.jsonl. A count is the total over those runs, its share, and the lowest and highest count in one run. Turn times are nearest-rank over every turn of those runs. Code is the start of the SHA-256 of src/, package.json, pnpm-lock.yaml and the set's fixtures. Times scored counts the agent's lines for this set in the ledger.
+Final set, cases/final. Each row covers every scored run of one agent on the set's current case files with the same code as the latest of them, each regraded and matched to its line in results/ledger.jsonl. A count is the total over those runs, its share, and the lowest and highest count in one run. Turn times are nearest-rank over every turn of those runs. Code is the start of the SHA-256 of src/, package.json, pnpm-lock.yaml and the set's fixtures. Times scored counts the agent's lines for this set in the ledger, also those scored on earlier case files, which no row covers.
 
 | agent | runs | conversations | passed every check | resolved correctly | handover rate | wrong-action rate | blocked attempts | median turn | p95 turn | cost per conversation | code | latest commit | times scored |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | ---: |
-| rule-based | 1 | 18 | 4/18 (22%), per run 4 | 1/18 (6%), per run 1 | 12/18 (67%), per run 12 | 0/18 (0%), per run 0 | 2/18 (11%), per run 2 | 0.17 ms | 1.92 ms | $0.0000 | cf4c36d9eeec | 83c34fc | 3 |
-| plain-gpt-6-luna | 3 | 54 | 47/54 (87%), per run 15–16 | 17/54 (31%), per run 5–6 | 16/54 (30%), per run 5–6 | 0/54 (0%), per run 0 | 0/54 (0%), per run 0 | 2412.49 ms | 4042.02 ms | $0.0002 | cf4c36d9eeec | fe90c23 | 3 |
-| plain-gpt-6.2-sol | 3 | 54 | 47/54 (87%), per run 15–16 | 20/54 (37%), per run 6–7 | 15/54 (28%), per run 5 | 0/54 (0%), per run 0 | 0/54 (0%), per run 0 | 2684.78 ms | 4756.97 ms | $0.0117 | cf4c36d9eeec | a13834f | 3 |
-| sdk-gpt-6-luna | 3 | 54 | 50/54 (93%), per run 16–17 | 21/54 (39%), per run 7 | 15/54 (28%), per run 5 | 0/54 (0%), per run 0 | 0/54 (0%), per run 0 | 2546.21 ms | 4967.93 ms | $0.0002 | 36b565ff6cb3 | f3de877 | 3 |
-| sdk-gpt-6.2-sol | 3 | 54 | 51/54 (94%), per run 17 | 24/54 (44%), per run 8 | 15/54 (28%), per run 5 | 0/54 (0%), per run 0 | 0/54 (0%), per run 0 | 3235.04 ms | 5826.46 ms | $0.0124 | 36b565ff6cb3 | b7df493 | 3 |
-| sdk-claude-haiku-5-5 | 3 | 54 | 38/54 (70%), per run 12–13 | 16/54 (30%), per run 5–6 | 11/54 (20%), per run 3–4 | 0/54 (0%), per run 0 | 0/54 (0%), per run 0 | 2663.24 ms | 4523.90 ms | $0.0014 | 36b565ff6cb3 | d1e8a72 | 3 |
-| sdk-claude-sonnet-5-5 | 3 | 54 | 37/54 (69%), per run 11–14 | 15/54 (28%), per run 4–6 | 30/54 (56%), per run 9–11 | 0/54 (0%), per run 0 | 1/54 (2%), per run 0–1 | 4118.22 ms | 10693.16 ms | $0.0312 | 36b565ff6cb3 | 8fc2d54 | 3 |
-| sdk-claude-haiku-5-5-tuned | 3 | 54 | 32/54 (59%), per run 8–13 | 15/54 (28%), per run 5 | 10/54 (19%), per run 3–4 | 0/54 (0%), per run 0 | 0/54 (0%), per run 0 | 2839.87 ms | 6531.69 ms | $0.0014 | 3063ac1fb2d5 | 3c46920 | 3 |
-| sdk-claude-sonnet-5-5-tuned | 3 | 54 | 45/54 (83%), per run 13–16 | 19/54 (35%), per run 5–7 | 23/54 (43%), per run 7–9 | 0/54 (0%), per run 0 | 0/54 (0%), per run 0 | 3142.50 ms | 7130.73 ms | $0.0303 | 3063ac1fb2d5 | ea5a9ce | 3 |
+| rule-based | 1 | 36 | 20/36 (56%), per run 20 | 8/36 (22%), per run 8 | 23/36 (64%), per run 23 | 0/36 (0%), per run 0 | 6/36 (17%), per run 6 | 0.13 ms | 0.56 ms | $0.0000 | d1a47702610f | 99db4b5 | 4 |
+| plain-gpt-6-luna | 3 | 108 | 102/108 (94%), per run 34 | 40/108 (37%), per run 13–14 | 36/108 (33%), per run 12 | 0/108 (0%), per run 0 | 4/108 (4%), per run 1–2 | 1827.59 ms | 3342.25 ms | $0.0003 | d1a47702610f | 19fb763 | 6 |
+| plain-gpt-6.2-sol | 3 | 108 | 102/108 (94%), per run 33–35 | 41/108 (38%), per run 13–14 | 34/108 (31%), per run 11–12 | 0/108 (0%), per run 0 | 8/108 (7%), per run 2–3 | 2574.12 ms | 5477.54 ms | $0.0184 | d1a47702610f | 424543f | 6 |
+| sdk-gpt-6-luna | 3 | 108 | 98/108 (91%), per run 32–33 | 40/108 (37%), per run 13–14 | 37/108 (34%), per run 11–13 | 0/108 (0%), per run 0 | 3/108 (3%), per run 1 | 1902.51 ms | 3334.60 ms | $0.0003 | d1a47702610f | 9a7769a | 6 |
+| sdk-gpt-6.2-sol | 3 | 108 | 103/108 (95%), per run 33–35 | 41/108 (38%), per run 13–14 | 35/108 (32%), per run 11–12 | 0/108 (0%), per run 0 | 9/108 (8%), per run 3 | 2681.46 ms | 5291.72 ms | $0.0180 | d1a47702610f | 2a18886 | 6 |
+| sdk-claude-haiku-5-5 | 3 | 108 | 75/108 (69%), per run 22–27 | 31/108 (29%), per run 9–11 | 29/108 (27%), per run 8–12 | 1/108 (1%), per run 0–1 | 3/108 (3%), per run 1 | 2032.15 ms | 4846.46 ms | $0.0022 | d1a47702610f | 7e5300c | 6 |
+| sdk-claude-sonnet-5-5 | 3 | 108 | 84/108 (78%), per run 27–30 | 24/108 (22%), per run 7–9 | 59/108 (55%), per run 18–21 | 1/108 (1%), per run 0–1 | 4/108 (4%), per run 1–2 | 2347.22 ms | 8380.14 ms | $0.0466 | d1a47702610f | 5364ac7 | 6 |
+| sdk-claude-haiku-5-5-tuned | 3 | 108 | 69/108 (64%), per run 21–26 | 24/108 (22%), per run 7–9 | 34/108 (31%), per run 9–13 | 1/108 (1%), per run 0–1 | 3/108 (3%), per run 1 | 2325.87 ms | 4994.23 ms | $0.0022 | d1a47702610f | b48a007 | 6 |
+| sdk-claude-sonnet-5-5-tuned | 3 | 108 | 89/108 (82%), per run 27–32 | 31/108 (29%), per run 8–12 | 48/108 (44%), per run 15–18 | 1/108 (1%), per run 0–1 | 4/108 (4%), per run 1–2 | 2228.51 ms | 6929.32 ms | $0.0468 | d1a47702610f | 3bdf79f | 6 |
 
-Validation set, cases/held-out. Each row covers every scored run of one agent with the same cases and the same code as its latest run, each regraded and matched to its line in results/ledger.jsonl. A count is the total over those runs, its share, and the lowest and highest count in one run. Turn times are nearest-rank over every turn of those runs. Code is the start of the SHA-256 of src/, package.json, pnpm-lock.yaml and the set's fixtures. Times scored counts the agent's lines for this set in the ledger.
+Validation set, cases/held-out. Each row covers every scored run of one agent on the set's current case files with the same code as the latest of them, each regraded and matched to its line in results/ledger.jsonl. A count is the total over those runs, its share, and the lowest and highest count in one run. Turn times are nearest-rank over every turn of those runs. Code is the start of the SHA-256 of src/, package.json, pnpm-lock.yaml and the set's fixtures. Times scored counts the agent's lines for this set in the ledger, also those scored on earlier case files, which no row covers.
 <!-- report table: end -->
 
 "Resolved correctly" is low by design. A conversation the scope sends to a person, or one the agent must refuse, is counted as handed over or refused, not resolved.
 
 ## Decisions and the numbers behind them
 
-The scores in this table come from the earlier runs that [the results](#results) describe, on the sets as they were then. The language check alone is measured on today's tuning set.
+The scores in this table come from the scored runs on today's sets, unless a row says otherwise.
 
 | Decision | What measured it |
 | --- | --- |
-| The functions enforce the policy and the identity check, not the prompt. | 0 wrong actions in 864 scored model conversations, on two vendors, two loops and two prompts. The baseline's forbidden attempts, 3 on the final set and 2 on the validation set, were refused by the functions and changed nothing. |
-| Define a complaint and a dispute in the scope instead of tuning the prompt around them. | All 12 tuning failures of the stronger model at that point were handovers marked as complaints. After the scope said what a complaint is, it passed 18 to 19 of 19. |
-| Check the reply language with two word lists instead of a model or a package. | It reads 66 of the 75 tuning customer turns right, none wrong and 9 as unsure, and an unsure reading never fails a case. |
-| Score three runs per agent and report the spread. | One run moves by one or two cases. A single run cannot show a change worth one case. |
-| Quote the final set, not the tuning set. | Both models pass 19 of 19 tuning conversations in every run, so that set no longer tells them apart. The same agents pass 87% of the validation set. |
+| The functions enforce the policy and the identity check, not the prompt. | Every forbidden request any agent tried was refused inside the function: the keyword baseline's 11 on the final set and 6 on the validation set, and 96 by the model agents across both sets. The GPT agents took no wrong action in 864 scored conversations. The Claude agents filed 6 requests the case did not expect, all within the policy, in 864. |
+| Define a complaint and a dispute in the scope instead of tuning the prompt around them. | On the first tuning set, all 12 tuning failures of the stronger model at that point were handovers marked as complaints. After the scope said what a complaint is, it passed 18 to 19 of 19. |
+| Check the reply language with two word lists instead of a model or a package. | It reads 90 of the 99 tuning customer turns right, none wrong and 9 as unsure, and an unsure reading never fails a case. |
+| Score three runs per agent and report the spread. | One run moves by up to five cases from the next. A single run cannot show a change worth one case. |
+| Quote the final set, not the tuning set. | Whoever tuned the prompts read every tuning case. The GPT agents pass 40 to 42 of 42 tuning conversations per run, and 32 to 35 of 36 final conversations, which nobody who tuned read. |
 | Regrade every saved run in the report, and check the README against it in `pnpm check`. | A grader change that moves a published number stops the report with the field and both values. |
 | Replay recorded model responses offline by default. | The check, CI and the Docker run need no key and no network, and the replay sends byte for byte the requests it recorded. |
-| Keep the plain loop rather than the AI SDK loop. | On the same two models, the SDK loop (`sdk-gpt-*`) passes 52 and 51 of 54 final conversations, the same as the plain loop. On the validation set it passes 50 and 51 to the plain loop's 47 and 47, about one case a run. That difference is too small to justify giving up recordings that are plain JSON. |
-| Stay on the tuned vendor rather than switching at the same price. | Run with the prompt unchanged, the price-matched Claude models pass 40 and 42 of 54 final conversations, against 52 and 51 for the GPT models. The larger Claude model hands over 28 of 54. Neither makes a wrong action. |
-| Tune a second vendor on the tuning set before comparing it. | One climb on the tuning set added a rule to answer as soon as the agent has what it needs (`sdk-claude-*-tuned`, [the climb](docs/design.md#tuning-the-second-vendor)). The larger Claude model went from 42 to 48 of 54 final conversations, and from 37 to 45 on the validation set. Its handovers fell from 28 to 22. The smaller one stayed at 40 on the final set and fell from 38 to 32 on the validation set. Even tuned, both still trail the GPT models. |
-| Recommend a model only after a blind reading. | The grader has the cheaper model one conversation ahead. Both blind readers put the stronger one 7 to 8 ahead, on exactly what the grader cannot see. |
+| Keep the plain loop rather than the AI SDK loop. | On the same two models, the SDK loop (`sdk-gpt-*`) passes 96 and 104 of 108 final conversations to the plain loop's 99 and 104, and 98 and 103 of 108 validation conversations to 102 and 102. That difference is too small to justify giving up recordings that are plain JSON. |
+| Stay on the tuned vendor rather than switching at the same price. | Run with the prompt unchanged, the price-matched Claude models pass 74 and 74 of 108 final conversations, against 99 and 104 for the GPT models. The larger Claude model hands over 60 of 108. |
+| Give both vendors the same tuning climb before comparing them. | Both climbed again on the grown tuning set under one rule written before any run ([the second climb](docs/design.md#the-second-climb-the-same-for-both-vendors)). GPT's starting prompt already met the stop condition. Claude's four steps were all reverted, so the tuned Claude agents keep the first climb's rules. Those rules take the larger Claude model from 74 to 82 of 108 final conversations and from 84 to 89 on the validation set, and the smaller one from 74 to 80 on the final set and from 75 down to 69 on the validation set. Even tuned, both trail the GPT models. |
+| Recommend a model only after a blind reading. | The grader passes 230 of the 288 newest final conversations. Reader G accepts 208 and rejects 34 that the grader passed, most for a needless or early handover, which the grader cannot see. |
 
 ## Limits
 
 These are the weak spots, stated before a reader finds them.
 
 - **The conversations are synthetic and scripted.** Language models wrote them from the scope. A scripted customer cannot react to what the agent says.
-- **The sets are small.** One conversation of an 18-conversation set is 5.6 points of one run. Three runs narrow the noise but do not remove it.
-- **The validation set may be easier than the cases that moved into tuning.** Before the sets moved, the keyword baseline passed 10 of its 18 conversations and 4 of the 18 that moved.
-- **"Test set first" means before the model agent.** The keyword baseline existed before the cases. One tuning expectation changed after review, and one tuning case was repaired after a policy correction made it unpassable. [FAILURES.md](FAILURES.md) records both.
-- **The validation set has been scored before.** It was the final set until the sets moved, so its numbers were published, though nobody who tuned the agent has read it. The set that had been validation moved into tuning, because the person who changed the complaint policy had seen its expected outcomes.
-- **The second vendor had one short climb.** It took six steps on the tuning set, and one step was kept. The tuned Claude agents add one section to the shared prompt. The smaller model's runs vary more than any single fix was worth, so its rows show what a short climb gets, not what that family can do.
-- **Text only.** The model takes about 2.2 to 2.5 s per turn in the median and about 5 s at the 95th percentile. That leaves out tool time. It is workable for chat and too slow for a voice line.
+- **The sets are small.** One conversation of a 36-conversation set is 2.8 points of one run. Three runs narrow the noise but do not remove it.
+- **The sets differ in difficulty.** The keyword baseline passes 14 of 42 tuning conversations, 20 of 36 validation conversations and 12 of 36 final conversations.
+- **"Test set first" means before the model agent.** The keyword baseline existed before the cases. One tuning expectation changed after review, and two tuning cases were repaired, one after a policy correction made it unpassable and one whose middle question the policy sends to a person. [FAILURES.md](FAILURES.md) and [the design](docs/design.md#the-second-climb-the-same-for-both-vendors) record them.
+- **Half the validation set has been scored before.** Its 18 older cases were the final set until the sets moved, so their numbers were published, though nobody who tuned the agent has read them.
+- **The case authors, the checker and the readers share vendors.** Grok 4.7 wrote the final set and is blind reader G. A Gemini model wrote the 18 newer validation cases, and Gemini 4 Hydrogen is reader M. A GPT model, the vendor of the GPT agents, checked both new sets against the scope.
+- **Reader M judged 112 of the 288 final conversations.** Its quota ran out there. The packet is shuffled, so the 112 are a random sample across all eight agents, and every comparison with reader M uses those 112 only.
+- **Neither climb kept a step.** Both vendors climbed under the same rule. GPT's starting prompt already met the stop condition, and Claude's four steps were reverted. The last one fixed the three cases the smaller Claude model failed in every run and raised its mean by four cases, but one run fell short of the bar. The Claude rows show where a stopped climb left that family, not what it can do.
+- **A delivery change takes any text as its address.** Twice on the validation set the larger Claude model filed one with a placeholder such as "To be provided by the customer", and the function accepted it.
+- **Text only.** The GPT agents take about 1.8 to 2.7 s per turn in the median and 3.3 to 5.5 s at the 95th percentile, and the Claude agents up to 8.4 s. That leaves out tool time. It is workable for chat and too slow for a voice line.
 - **The language check passes what it cannot read.** A short reply or a mixed one counts as unsure and never fails.
 - **A request can be amended only in the conversation that filed it.** An order shows no earlier claim, so a wish the customer adds in a later conversation needs a person.
 - **Log redaction is by pattern and by the names the functions returned.** It masks emails, phone, card and IBAN numbers, street addresses and each customer name a function returned in the chat. A name the customer only types, such as a friend's, stays.
-- **The framework comparison covers one framework.** The `sdk-*` agents run one AI SDK loop, recorded at the wire like the plain agent. Other frameworks were not measured. The blind readers read only the plain agents.
+- **The framework comparison covers one framework.** The `sdk-*` agents run one AI SDK loop, recorded at the wire like the plain agent. Other frameworks were not measured.
+- **Today's final failures are not yet traced to their causes.** The failure reviews linked above cover the sets as they were before they moved.
 
 ## Run it
 
@@ -162,7 +170,7 @@ Live runs, recording and scoring call a paid provider and need a key in `.env`. 
 | `docs/scope.md` | The client, the policy, the outcomes, the wrong actions and the test plan. |
 | `docs/design.md` | Every design choice with its alternatives, the tuning steps, and the full list of limits. |
 | `docs/judging.md` | The rubric a reader applies to one conversation. |
-| `src/` | About 3,750 lines of TypeScript: shapes, functions, MCP server, agents, runner, grader, report, audit tools. |
+| `src/` | About 3,850 lines of TypeScript: shapes, functions, MCP server, agents, runner, grader, report, audit tools. |
 | `cases/`, `fixtures/` | The three sets and their orders. |
 | `recordings/` | The last tuning run of each model agent, replayed offline. |
 | `results/` | Every scoring run, the ledger, and the failure reviews. |
