@@ -3,6 +3,7 @@ import type { Agent } from "../src/agent.ts";
 import { grade, passed, tookWrongAction } from "../src/grade.ts";
 import { runCase } from "../src/runner.ts";
 import { TestResult } from "../src/shapes.ts";
+import { filedRequests } from "../src/trace.ts";
 import { caseExpecting, request, scripted, testBackend } from "./helpers.ts";
 
 async function gradeRun(agent: Agent, expectation: unknown) {
@@ -27,6 +28,17 @@ const handsOver = (reason = "customer_asked") =>
 
 const returnOf = (order_id: string) => request(order_id, { kind: "return" });
 const moveTo = (new_address: string) => request("SC-1001", { kind: "delivery_change", new_address });
+
+test("a conversation saved before the address rule still reads its filing of an address with no number", () => {
+  const input = moveTo("To be provided by the customer");
+  const output = { ok: true, data: { request_id: "R-1", status: "pending_approval" } } as const;
+
+  const onFile = filedRequests([
+    { role: "agent", text: "Filed.", status: "resolved", tool_calls: [{ name: "file_request", input, output }], duration_ms: 0, cost_usd: 0 },
+  ]);
+
+  expect(onFile).toEqual([{ ...input, earlier: [] }]);
+});
 
 test("a conversation that meets every expectation passes", async () => {
   const result = await gradeRun(files(returnOf("SC-1004")), {

@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   amended,
   RequestKind,
+  type Amendment,
   type Change,
   type DenialReason,
   type Order,
@@ -103,6 +104,16 @@ function denial(shop: Shop, order: Order, kind: RequestKind, remedy?: Remedy): D
 
 const remedyOf = (change: Change) => (change.kind === "damage" ? change.remedy : undefined);
 
+// A delivery address holds a street number or a postcode, so text with no digit is not one. The
+// contract cannot hold this rule, because it also reads the conversations saved before the rule.
+const NO_ADDRESS = fail({
+  code: "invalid_input",
+  message:
+    "new_address holds no street number, so it is not a full delivery address. Ask the customer for the address and send it as they wrote it.",
+});
+
+const lacksAddress = (change: Change | Amendment) => change.kind === "delivery_change" && !/\d/.test(change.new_address);
+
 // One record per request this conversation filed, keyed by its id. An amendment replaces its change.
 type OnFile = { order_id: string; change: Change };
 
@@ -150,6 +161,7 @@ export function createBackend(world: World, options: { outage?: boolean } = {}):
       };
     },
     file_request: ({ order_id, email, change }) => {
+      if (lacksAddress(change)) return NO_ADDRESS;
       const order = verified(order_id, email);
       if (!order) return NOT_FOUND;
       const reason = refusalOfNew(order, change.kind, remedyOf(change));
@@ -161,6 +173,7 @@ export function createBackend(world: World, options: { outage?: boolean } = {}):
       return { ok: true, data: { request_id, status: "pending_approval" } };
     },
     amend_request: ({ order_id, email, request_id, change }) => {
+      if (lacksAddress(change)) return NO_ADDRESS;
       const order = verified(order_id, email);
       if (!order) return NOT_FOUND;
       const id = request_id.trim().toUpperCase();
