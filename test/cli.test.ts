@@ -96,7 +96,7 @@ test("the ledger gains one line per score and notes a dirty tree and changed cas
 
 // A final set for the test repository: the held-out cases and orders moved to the final split and its order numbers.
 async function addFinalSet(root: string) {
-  const final = (text: string) => text.replace("split: held-out", "split: final").replaceAll("SC-20", "SC-30").replaceAll("SC20", "SC30");
+  const final = (text: string) => text.replace("split: held-out", "split: final").replaceAll("SC-30", "SC-50").replaceAll("SC30", "SC50");
   await mkdir(join(root, "cases", "final"));
   for (const name of await readdir(join(root, "cases", "held-out"))) {
     await writeFile(join(root, "cases", "final", name), final(await readFile(join(root, "cases", "held-out", name), "utf8")));
@@ -151,14 +151,14 @@ test("the tuning command reaches neither scored set, and score takes only a scor
   await expect(readdir(join(root, "results"))).rejects.toThrow();
 });
 
-test("a final order outside SC-3000 to SC-3999 fails the load", async () => {
+test("a final order outside SC-5000 to SC-5999 fails the load", async () => {
   const root = await testRepo();
   await addFinalSet(root);
   const file = join(root, "fixtures", "final.yaml");
-  await writeFile(file, (await readFile(file, "utf8")).replace("SC-3001", "SC-2001"));
+  await writeFile(file, (await readFile(file, "utf8")).replace("SC-5001", "SC-3001"));
   commitAll(root);
 
-  await expect(main(["score", "--set", "final"], root)).rejects.toThrow("SC-2001 is outside the final range SC-3000 to SC-3999");
+  await expect(main(["score", "--set", "final"], root)).rejects.toThrow("SC-3001 is outside the final range SC-5000 to SC-5999");
 });
 
 test("a score whose ledger line cannot be written saves no results and no summary", async () => {
@@ -452,14 +452,45 @@ test("report stops when a regraded run disagrees with its ledger line", async ()
   );
 });
 
-test("report says the cases changed when that is why a regraded run disagrees", async () => {
+test("a run scored on earlier case files is not regraded, and its agent has no row until it is scored on the current ones", async () => {
   const { root } = await scoredRepo();
   const caseFile = join(root, "cases", "held-out", "ro-unde-e-comanda.yaml");
-  await writeFile(caseFile, (await readFile(caseFile, "utf8")).replace("track/SC2002", "track/SC9999"));
+  // The edit would fail this run's regrade, so a report that regraded it would stop.
+  await writeFile(caseFile, (await readFile(caseFile, "utf8")).replace("track/SC3002", "track/SC9999"));
+  const before = await tree(root);
 
-  await expect(main(["report"], root)).rejects.toThrow(
-    "passed grades to 1 but the ledger records 2; resolved_correctly grades to 1 but the ledger records 2. The held-out cases have changed since it was scored",
+  const stale = await main(["report", "--markdown"], root);
+  await writeFile(join(root, "README.md"), readme(stale));
+  const checked = await main(["report", "--check-readme"], root);
+  const after = (await tree(root)).filter(([file]) => file !== "README.md");
+  await main(["score"], root);
+  const [row] = await reportRows(root);
+
+  expect(stale).toBe(
+    "Validation set, cases/held-out. No run is scored on its current case files. The ledger holds 1 line for this set scored on earlier case files, which no row covers.",
   );
+  expect(checked).toBe("README.md shows the current pnpm report --markdown table.");
+  expect(after).toEqual(before);
+  expect(row?.slice(0, 3)).toEqual(["rule-based", "1", "2"]);
+  expect(row?.at(-1)).toBe("2");
+});
+
+test("a set whose cases moved away is reported without loading its empty folder", async () => {
+  const root = await testRepo();
+  await addFinalSet(root);
+  commitAll(root);
+  await main(["score", "--set", "final"], root);
+  await main(["score"], root);
+  await rm(join(root, "cases", "final"), { recursive: true });
+  await rm(join(root, "fixtures", "final.yaml"));
+
+  const lines = (await main(["report", "--markdown"], root)).split(/\n/);
+
+  expect(lines[0]).toBe(
+    "Final set, cases/final. No run is scored on its current case files. The ledger holds 1 line for this set scored on earlier case files, which no row covers.",
+  );
+  expect(lines.filter((line) => line.startsWith("| rule-based |"))).toHaveLength(1);
+  expect(lines.find((line) => line.startsWith("Validation set"))).toContain("Times scored counts the agent's lines for this set in the ledger, also those scored on earlier case files");
 });
 
 test("report on an empty ledger exits with a clear message", async () => {
@@ -590,6 +621,30 @@ test("replay fails when a model agent's recordings directory is present but a tu
   await mkdir(join(root, "recordings", "plain-gpt-6-luna", "tuning"), { recursive: true });
 
   await expect(main(["replay"], root)).rejects.toThrow("recordings/plain-gpt-6-luna/tuning/en-asks-for-a-person.json");
+});
+
+test("replay names each model agent whose recordings no longer match its requests, after replaying the rest", async () => {
+  const root = await testRepo();
+  for (const name of ["plain-gpt-6-luna", "sdk-gpt-6-luna"]) {
+    const dir = join(root, "recordings", name, "tuning");
+    await mkdir(dir, { recursive: true });
+    const old = [{ request: { instructions: "an older prompt" }, response: {}, duration_ms: 1, cost_usd: 0 }];
+    await writeFile(join(dir, "en-asks-for-a-person.json"), JSON.stringify(old));
+  }
+
+  const failed = await main(["replay"], root).then(
+    () => "",
+    (error: Error) => error.message,
+  );
+
+  expect(failed).toContain("agent: rule-based\nrun: traces/rule-based/");
+  for (const name of ["plain-gpt-6-luna", "sdk-gpt-6-luna"]) {
+    expect(failed).toContain(
+      `agent: ${name}\nstale: tuning/en-asks-for-a-person stopped the run: model call 1 does not match its recording. Its recording path is recordings/${name}/tuning/en-asks-for-a-person.json. The tuning recordings of ${name} no longer replay and must be made again with pnpm tune --agent ${name} --record`,
+    );
+  }
+  expect(failed).toContain("agent: plain-gpt-6.2-sol\nskipped: recordings/plain-gpt-6.2-sol is missing");
+  expect(failed.split("\n").at(-1)).toBe("replay failed: the tuning recordings of 2 agents must be made again.");
 });
 
 test("replay refuses a recordings directory without a registered model agent", async () => {

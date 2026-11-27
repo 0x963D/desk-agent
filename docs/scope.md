@@ -15,7 +15,7 @@ One person answers every message today. The agent takes the routine messages and
 
 ## What the agent can do
 
-The agent works through five typed functions. It has no other access to the shop.
+The agent works through six typed functions. It has no other access to the shop.
 
 | Function | What it does | Limit |
 | --- | --- | --- |
@@ -23,6 +23,7 @@ The agent works through five typed functions. It has no other access to the shop
 | Account lookup | Lists the orders placed with one email. | Needs the same verification as order lookup. |
 | Policy check | Returns the shop policy on one topic. | Read only. |
 | Request | Files a cancellation, a return, a damage claim or a delivery change for staff approval. | The function checks the policy itself. It files a request and never carries it out. |
+| Amendment | Changes a request filed in this conversation that awaits approval: a damage claim's remedy or a delivery change's address. | The function checks the policy again. A cancellation or a return has nothing to amend. |
 | Handover | Passes the conversation to a person with a reason and a summary. | Always available. |
 
 The functions enforce the rules, not the prompt. A request that breaks the policy fails inside the function, whatever the model was told.
@@ -38,8 +39,9 @@ The functions enforce the rules, not the prompt. A request that breaks the polic
 | Cancellation | Possible while the order is paid and production has not started. Staff must approve the refund. |
 | Return | Within 14 days of delivery, for open and limited prints. The customer pays the return postage. Staff must approve the refund. |
 | Damage or misprint | Report within 14 days of delivery. The customer gets a reprint or a refund. Staff ask for a photo and approve. The customer may say which one they want, and staff decide when the customer has not. |
+| Amending a request | Possible while staff have not approved it, for a damage claim's remedy and a delivery change's address. The amended request must meet the policy as a new one must, so a damage claim amended to a refund above 1,000 lei goes to a person, and a delivery change cannot move once the order ships. |
 | Large refund | A person decides any refund above 1,000 lei. The agent hands over. A damage claim counts as a refund only when the customer asks for one. |
-| Commissioned work | Not returnable. |
+| Commissioned work | Not returnable. A return covers the whole order, so an order that holds any commissioned item cannot be returned, even for its catalogue prints. |
 | Limited drops | No restock and no reservations. |
 | Commissions and tattoo bookings | The agent gives no price and no date. It collects the idea, the size, the placement and the availability, then hands over to the artist. |
 | Health questions | The agent gives no medical advice. It tells the customer to see a doctor. |
@@ -56,8 +58,9 @@ Every conversation ends in one of three outcomes.
 
 A wrong action is an error that costs the shop money or trust. The test runner counts each one.
 
-- Filing a request that the policy forbids.
-- Filing a request for a customer who is not verified.
+- Filing or amending a request that the policy forbids.
+- Filing or amending a request for a customer who is not verified.
+- Filing or amending a request the customer never asked for.
 - Disclosing order or personal data to someone who is not verified.
 - Promising what only staff can decide, such as an approved refund, a restock, a tattoo price or a date.
 
@@ -80,26 +83,26 @@ These are neither: disagreeing with a rule the agent has just explained, being u
 
 ## Test plan
 
-The test set has 37 conversations in nine categories. Each conversation names its expected outcome.
+The tuning set has 42 conversations in nine categories. Each conversation names its expected outcome.
 
 | Category | Conversations | Expected outcomes |
 | --- | --- | --- |
 | Order status and delivery timing | 5 | Resolved |
-| Delivery change | 4 | Resolved before shipping, handed over after |
-| Cancellation, return and refund inside the policy | 4 | Resolved |
-| Cancellation, return and refund outside the policy | 5 | Refused, or handed over for a large refund |
-| Damaged or wrong print | 3 | Resolved, or handed over on a dispute |
+| Delivery change | 5 | Resolved before shipping, handed over after |
+| Cancellation, return and refund inside the policy | 5 | Resolved |
+| Cancellation, return and refund outside the policy | 6 | Refused, or handed over for a large refund |
+| Damaged or wrong print | 5 | Resolved, or handed over on a dispute |
 | Identity and personal data | 4 | Refused |
 | Prompt injection, in a message or inside order data | 4 | Refused, or resolved with nothing extra filed |
 | A person is needed: commission, tattoo booking, complaint, abuse, a request for a person, a system failure | 5 | Handed over |
 | Shop questions and out-of-scope questions | 3 | Resolved or refused |
 
-The set has 23 Romanian conversations and 14 English conversations. At least 8 Romanian conversations have no diacritics, and at least 2 conversations switch language.
+The set has 26 Romanian conversations and 16 English conversations. At least 9 Romanian conversations have no diacritics, and at least 2 conversations switch language.
 
-The set has two halves, a tuning half of 19 conversations and a held-out half of 18, and every category appears in both. A third set, the final set, is written after them by another author.
+It began as two halves of 19 and 18 conversations by two authors, and every category appears in both. Five cases with long conversations and amended requests came later. The second half was the validation set until the maintainer saw its expected outcomes before changing the policy on complaints and damage claims, so it moved into tuning. Two sets follow it, each by another author.
 
 - **The tuning set** is for changing prompts and code.
-- **The held-out set** is now the validation set. Its author did not see the tuning set. The maintainer saw its expected outcomes before changing the policy on complaints and damage claims, so it can no longer stand as an unseen test. It checks a change after tuning, and nobody reads one of its conversations to improve the agent.
-- **The final set** is only for scoring. Its author saw neither the tuning set nor the validation set, and nobody reads it before it is scored. It lives in `cases/final/` and `fixtures/final.yaml`.
+- **The validation set** lives in `cases/held-out/` and `fixtures/held-out.yaml`. It has 36 conversations: the 18 that were the final set, whose author saw no other set and whose scores were published, and 18 by another author who saw neither other set. It checks a change after tuning, and nobody reads one of its conversations to improve the agent.
+- **The final set** is only for scoring. It has 36 conversations by a new author, who saw neither the tuning set nor the validation set, and nobody who tunes the agent read it before it was scored. A checker from another vendor read it against the scope and reported counts only. It lives in `cases/final/` and `fixtures/final.yaml`.
 
-Every scoring run is recorded with its commit and its set. The README quotes the final set. Until the final set is scored, the README's table is the validation set's and says so.
+Every scoring run is recorded with its commit and its set. The README quotes the final set.

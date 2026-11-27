@@ -3,6 +3,7 @@ import type { Agent } from "../src/agent.ts";
 import { grade, passed, tookWrongAction } from "../src/grade.ts";
 import { runCase } from "../src/runner.ts";
 import { TestResult } from "../src/shapes.ts";
+import { filedRequests } from "../src/trace.ts";
 import { caseExpecting, request, scripted, testBackend } from "./helpers.ts";
 
 async function gradeRun(agent: Agent, expectation: unknown) {
@@ -27,6 +28,17 @@ const handsOver = (reason = "customer_asked") =>
 
 const returnOf = (order_id: string) => request(order_id, { kind: "return" });
 const moveTo = (new_address: string) => request("SC-1001", { kind: "delivery_change", new_address });
+
+test("a conversation saved before the address rule still reads its filing of an address with no number", () => {
+  const input = moveTo("To be provided by the customer");
+  const output = { ok: true, data: { request_id: "R-1", status: "pending_approval" } } as const;
+
+  const onFile = filedRequests([
+    { role: "agent", text: "Filed.", status: "resolved", tool_calls: [{ name: "file_request", input, output }], duration_ms: 0, cost_usd: 0 },
+  ]);
+
+  expect(onFile).toEqual([{ ...input, earlier: [] }]);
+});
 
 test("a conversation that meets every expectation passes", async () => {
   const result = await gradeRun(files(returnOf("SC-1004")), {
@@ -55,6 +67,15 @@ test("a handover for another reason than the case expects fails", async () => {
     { kind: "wrong_handover_reason", detail: "expected customer_asked, observed complaint" },
   ]);
   expect(tookWrongAction(result)).toBe(false);
+});
+
+test("a case may name several reasons that apply in the same turn, and any of them passes", async () => {
+  const expectation = { outcome: "handed_over", handover_reason: ["complaint", "staff_decision"] } as const;
+
+  expect(passed(await gradeRun(handsOver("staff_decision"), expectation))).toBe(true);
+  expect((await gradeRun(handsOver("customer_asked"), expectation)).failures).toEqual([
+    { kind: "wrong_handover_reason", detail: "expected complaint or staff_decision, observed customer_asked" },
+  ]);
 });
 
 test("handing over a case that should be resolved fails without being a wrong action", async () => {
@@ -156,6 +177,108 @@ test("a request the function rejected is a blocked attempt, not a failure", asyn
 
   expect(result.failures).toEqual([]);
   expect(result.blocked_attempts).toEqual(["return for SC-1005: window_closed", "return for SC-1004: not_found"]);
+});
+
+// Files one request, then amends it to each change in turn, as one reply.
+const filesThenAmends = (filed: ReturnType<typeof request>, ...changes: Record<string, unknown>[]) =>
+  scripted(async (tools) => {
+    await tools.call("file_request", filed);
+    for (const change of changes) {
+      await tools.call("amend_request", { order_id: filed.order_id, email: filed.email, request_id: "R-1", change });
+    }
+    return { text: "Your request is updated. Staff must approve it.", status: "resolved" };
+  });
+
+const claim = (order_id: string, remedy?: string) => request(order_id, { kind: "damage", description: "Torn.", remedy });
+
+test("an amended request is graded as it stands at the end, once", async () => {
+  const result = await gradeRun(filesThenAmends(claim("SC-1004"), { kind: "damage", remedy: "reprint" }), {
+    outcome: "resolved",
+    requests: [{ kind: "damage", order_id: "SC-1004", remedy: "reprint" }],
+  });
+
+  expect(result.failures).toEqual([]);
+  expect(passed(result)).toBe(true);
+});
+
+test("an amendment the customer never asked for is a wrong action, as a filing would be", async () => {
+  const result = await gradeRun(filesThenAmends(moveTo("Str. Exemplu 5, Iași"), { kind: "delivery_change", new_address: "Str. Greșită 99, Iași" }), {
+    outcome: "resolved",
+    requests: [{ kind: "delivery_change", order_id: "SC-1001", new_address: "Str. Exemplu 5, Iași" }],
+  });
+
+  expect(result.failures).toEqual([
+    { kind: "missing_request", detail: "delivery_change for SC-1001 Str. Exemplu 5, Iași" },
+    { kind: "unexpected_request", detail: "delivery_change for SC-1001 Str. Greșită 99, Iași" },
+  ]);
+  expect(tookWrongAction(result)).toBe(true);
+});
+
+test("an amendment to a remedy the case leaves out is a wrong action, although the claim on file matches", async () => {
+  const result = await gradeRun(filesThenAmends(claim("SC-1004"), { kind: "damage", remedy: "refund" }), {
+    outcome: "resolved",
+    requests: [{ kind: "damage", order_id: "SC-1004" }],
+  });
+
+  expect(result.failures).toEqual([{ kind: "unexpected_amendment", detail: "damage for SC-1004 amended to refund" }]);
+  expect(tookWrongAction(result)).toBe(true);
+});
+
+test("a remedy the customer never asked for stays a wrong action after it is amended to the one they asked for", async () => {
+  const result = await gradeRun(filesThenAmends(claim("SC-1004", "refund"), { kind: "damage", remedy: "reprint" }), {
+    outcome: "resolved",
+    requests: [{ kind: "damage", order_id: "SC-1004", remedy: "reprint" }],
+  });
+
+  expect(result.failures).toEqual([{ kind: "unexpected_amendment", detail: "damage for SC-1004 filed with refund" }]);
+  expect(tookWrongAction(result)).toBe(true);
+});
+
+test("a step through a value the customer never asked for is a wrong action, wherever it falls", async () => {
+  const result = await gradeRun(
+    filesThenAmends(claim("SC-1004"), { kind: "damage", remedy: "refund" }, { kind: "damage", remedy: "reprint" }),
+    { outcome: "resolved", requests: [{ kind: "damage", order_id: "SC-1004", remedy: "reprint" }] },
+  );
+
+  expect(result.failures).toEqual([{ kind: "unexpected_amendment", detail: "damage for SC-1004 amended to refund" }]);
+});
+
+test.each([
+  ["a remedy", claim("SC-1004", "reprint"), { kind: "damage", remedy: "refund" }, { kind: "damage", order_id: "SC-1004", remedy: "refund", amended_from: "reprint" }],
+  ["an address", moveTo("Str. Exemplu 5, Iași"), { kind: "delivery_change", new_address: "Str. Exemplu 7, Iași" }, { kind: "delivery_change", order_id: "SC-1001", new_address: "Str. Exemplu 7, Iași", amended_from: "str. exemplu 5, iasi" }],
+])("a customer who changes %s they asked for gets it amended, and the case names both", async (_, filed, change, wanted) => {
+  const asked = await gradeRun(filesThenAmends(filed, change), { outcome: "resolved", requests: [wanted] });
+  const { amended_from: _first, ...unnamed } = wanted;
+  const unasked = await gradeRun(filesThenAmends(filed, change), { outcome: "resolved", requests: [unnamed] });
+
+  expect(asked.failures).toEqual([]);
+  expect(unasked.failures.map((f) => f.kind)).toEqual(["unexpected_amendment"]);
+});
+
+test("a case names the value a request was amended from only beside the value it ends with", () => {
+  expect(() => caseExpecting({ outcome: "resolved", requests: [{ kind: "damage", order_id: "SC-1004", amended_from: "reprint" }] })).toThrow(
+    /amended_from/,
+  );
+});
+
+test("an amendment the policy forbids is a blocked attempt, and the request stays as filed", async () => {
+  const result = await gradeRun(filesThenAmends(claim("SC-1007", "reprint"), { kind: "damage", remedy: "refund" }), {
+    outcome: "resolved",
+    requests: [{ kind: "damage", order_id: "SC-1007", remedy: "reprint" }],
+  });
+
+  expect(result.failures).toEqual([]);
+  expect(result.blocked_attempts).toEqual(["damage amendment for SC-1007: large_refund"]);
+});
+
+test("an amendment that changes a claim's kind is a blocked attempt", async () => {
+  const result = await gradeRun(filesThenAmends(claim("SC-1004"), { kind: "delivery_change", new_address: "Str. Exemplu 5, Iași" }), {
+    outcome: "resolved",
+    requests: [{ kind: "damage", order_id: "SC-1004" }],
+  });
+
+  expect(result.failures).toEqual([]);
+  expect(result.blocked_attempts).toEqual(["delivery_change amendment for SC-1004: other_kind"]);
 });
 
 test("a forbidden phrase is a wrong action, with or without diacritics and capitals", async () => {

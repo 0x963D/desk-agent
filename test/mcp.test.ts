@@ -19,7 +19,7 @@ async function connect(options: { outage?: boolean } = {}): Promise<Client> {
 const call = (client: Client, name: string, args: Record<string, unknown>) =>
   client.callTool({ name, arguments: args });
 
-test("the server lists the five functions with their descriptions and object input schemas", async () => {
+test("the server lists the six functions with their descriptions and object input schemas", async () => {
   const { tools } = await (await connect()).listTools();
 
   expect(tools.map((tool) => tool.name)).toEqual(ToolName.options);
@@ -94,6 +94,6 @@ test("pnpm mcp serves the functions over stdio", async () => {
   const { tools } = await client.listTools();
   const handover = await call(client, "hand_over", { reason: "customer_asked", summary: "Wants a person." });
 
-  expect(tools).toHaveLength(5);
+  expect(tools).toHaveLength(6);
   expect(handover.structuredContent).toEqual({ ok: true, data: { handover_id: "H-1" } });
 });

@@ -13,9 +13,9 @@ import {
 } from "./shapes.ts";
 
 const ORDER_RANGE: Record<Split, [number, number]> = {
-  tuning: [1000, 1999],
-  "held-out": [2000, 2999],
-  final: [3000, 3999],
+  tuning: [1000, 2999],
+  "held-out": [3000, 4999],
+  final: [5000, 5999],
 };
 const EMAIL_IN_TEXT = /[^\s@<>()"',;:]+@[^\s@<>()"',;:]+\.[a-z]{2,}/gi;
 

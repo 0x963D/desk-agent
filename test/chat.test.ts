@@ -1,4 +1,4 @@
-import { cp, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
@@ -6,11 +6,15 @@ import type { Agent } from "../src/agent.ts";
 import { agents } from "../src/agents/index.ts";
 import { chat, type ChatOutput, type ChatSource } from "../src/chat.ts";
 import { main, type Terminal } from "../src/cli.ts";
-import { readJson } from "../src/files.ts";
+import { createBackend } from "../src/backend.ts";
+import { loadSplit, readJson } from "../src/files.ts";
 import { grade, passed } from "../src/grade.ts";
+import { recordingPath, recordModel } from "../src/model.ts";
 import { redacted } from "../src/redact.ts";
+import { runCase } from "../src/runner.ts";
 import { ChatLog, Conversation } from "../src/shapes.ts";
-import { caseExpecting, ROOT, tempDir, testRepo } from "./helpers.ts";
+import { spendGuard } from "../src/spend.ts";
+import { caseExpecting, testRepo, verified } from "./helpers.ts";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -112,22 +116,101 @@ test("personal data a customer typed or a function returned never reaches the se
   expect(conversation.join("\n")).toContain(TYPED.card);
 });
 
-test("a replay plays a tuning case's committed recording offline, through the agent the scored runs use", async () => {
+// Looks the order up on its first turn and repeats what it found on the second.
+const lookup: Agent = {
+  name: "lookup",
+  open: ({ tools }) => {
+    let found = "";
+    return async () => {
+      if (found !== "") return { text: `You are ${found}.`, status: "resolved" };
+      const answer = await tools.call("lookup_order", { order_id: "SC-1003", email: TYPED.email });
+      found = answer.ok ? answer.data.customer_name : "nobody";
+      return { text: "Found it.", status: "resolved" };
+    };
+  },
+};
+
+test("a customer name a function returned is masked in every note and in the log, and a name only typed is not", async () => {
+  const root = await testRepo();
+  const { output, conversation, notes } = recorder();
+  const first = `Sunt jonas WEBER, comanda SC-1003, mailul ${TYPED.email}. Coletul e pentru Toma Ilie.`;
+
+  await chat(root, lookup, live(first, "Cine sunt?"), output);
+
+  const { text } = await onlyLog(root, "lookup");
+  for (const written of [text, ...notes]) expect(written).not.toMatch(/jonas|weber/i);
+  expect(text).toContain("Sunt [name], comanda SC-1003");
+  expect(text).toContain("You are [name].");
+  expect(text).toContain("Toma Ilie");
+  expect(notes.some((line) => line.includes('"customer_name":"[name]"'))).toBe(true);
+  expect(conversation).toContain("agent     You are Jonas Weber.");
+});
+
+test("a surname that is also a status leaves the saved log valid", async () => {
+  const root = await testRepo();
+  const file = join(root, "fixtures", "tuning.yaml");
+  const fixtures = parseYaml(await readFile(file, "utf8")) as { orders: { order_id: string; customer_name: string }[] };
+  fixtures.orders.find((o) => o.order_id === "SC-1003")!.customer_name = "Jonas Open";
+  await writeFile(file, stringifyYaml(fixtures));
+  const asks: Agent = {
+    name: "asks",
+    open: ({ tools }) => async () => {
+      await tools.call("lookup_order", { order_id: "SC-1003", email: TYPED.email });
+      return { text: "Open, what would you like to change?", status: "open" };
+    },
+  };
+
+  await chat(root, asks, live("Unde e comanda?"), recorder().output);
+
+  const { log } = await onlyLog(root, "asks");
+  expect(log.turns.at(-1)).toMatchObject({ status: "open", text: "[name], what would you like to change?" });
+});
+
+test("a turn that fails after a lookup keeps the name it returned out of the error", async () => {
+  const failing: Agent = {
+    name: "failing",
+    open: ({ tools }) => async () => {
+      const answer = await tools.call("lookup_order", { order_id: "SC-1003", email: TYPED.email });
+      throw new Error(`could not greet ${answer.ok ? answer.data.customer_name : "nobody"}`);
+    },
+  };
+
+  const stopped = chat(await testRepo(), failing, live("Unde e comanda?"), recorder().output);
+
+  await expect(stopped).rejects.toThrow("the chat stopped: could not greet [name]");
+});
+
+// Records the plain agent on one tuning case of the test repository against a scripted provider,
+// which looks the order up and then replies, so the replay below needs no committed recording.
+async function recordScripted(root: string, agent: Agent, id: string) {
+  const { shop, cases, orders } = await loadSplit(root, "tuning");
+  const testCase = cases.find((c) => c.id === id)!;
+  const usage = { input_tokens: 1200, input_tokens_details: { cached_tokens: 0 }, output_tokens: 80 };
+  const responses = [
+    { status: "completed", output: [{ type: "function_call", call_id: "call_1", name: "lookup_order", arguments: JSON.stringify(verified("SC-1003")) }], usage },
+    {
+      status: "completed",
+      output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: JSON.stringify({ reply: "It has shipped: https://curier.example/track/SC1003", status: "resolved" }) }] }],
+      usage,
+    },
+  ];
+  const provider = { complete: async () => ({ response: responses.shift(), cost_usd: 0.0002 }) };
+  const recorder = recordModel(provider, recordingPath(root, agent.name, "tuning", id), spendGuard(join(root, ".artifacts", "spend.json"), 1));
+  await runCase(agent, testCase, createBackend({ shop, orders }), { model: recorder });
+  await recorder.save();
+}
+
+test("a replay plays a tuning case's recording offline, through the agent the scored runs use", async () => {
   vi.stubEnv("OPENAI_API_KEY", "");
-  const root = await tempDir();
-  const id = "ro-unde-e-coletul";
-  await cp(join(ROOT, "fixtures"), join(root, "fixtures"), { recursive: true, filter: (path) => !path.includes("held-out") });
-  await cp(join(ROOT, "cases", "tuning"), join(root, "cases", "tuning"), { recursive: true });
-  await mkdir(join(root, "recordings", "plain-gpt-6-luna", "tuning"), { recursive: true });
-  await cp(
-    join(ROOT, "recordings", "plain-gpt-6-luna", "tuning", `${id}.json`),
-    join(root, "recordings", "plain-gpt-6-luna", "tuning", `${id}.json`),
-  );
+  const root = await testRepo();
+  const agent = agents.get("plain-gpt-6-luna")!;
+  const id = "en-where-is-my-order";
+  await recordScripted(root, agent, id);
   const { output, conversation, notes } = recorder();
 
-  const closing = await chat(root, agents.get("plain-gpt-6-luna")!, { mode: "replay", case_id: id }, output);
+  const closing = await chat(root, agent, { mode: "replay", case_id: id }, output);
 
-  const { log } = await onlyLog(root, "plain-gpt-6-luna");
+  const { log } = await onlyLog(root, agent.name);
   expect(log.replay_of).toBe(id);
   expect(conversation.filter((line) => line.startsWith("agent"))).toHaveLength(
     log.turns.filter((turn) => turn.role === "agent").length,

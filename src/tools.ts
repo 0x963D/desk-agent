@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  Amendment,
   Change,
   DenialReason,
   Handover,
@@ -11,6 +12,7 @@ import {
 
 const order_id = z.string().min(1).describe("The order number, SC- and four digits, such as SC-1007.");
 const email = z.string().min(1).describe("The email the order was placed with.");
+const Filed = z.object({ request_id: z.string(), status: z.literal("pending_approval") });
 
 export const contracts = {
   lookup_order: {
@@ -57,7 +59,18 @@ export const contracts = {
     description:
       "File one cancellation, return, damage claim or delivery change for staff approval. Nothing changes until staff approve it. The function refuses what the policy forbids.",
     input: z.object({ order_id, email, change: Change }),
-    output: z.object({ request_id: z.string(), status: z.literal("pending_approval") }),
+    output: Filed,
+  },
+  amend_request: {
+    description:
+      "Change a request filed in this conversation that still awaits staff approval: a damage claim's remedy or a delivery change's new address. Give the request_id that file_request returned and the new change, of the same kind. A cancellation or a return has nothing to amend. The function refuses what the policy forbids, as file_request does.",
+    input: z.object({
+      order_id,
+      email,
+      request_id: z.string().min(1).describe("The request_id that file_request returned, such as R-1."),
+      change: Amendment,
+    }),
+    output: Filed,
   },
   hand_over: {
     description:

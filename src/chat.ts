@@ -8,6 +8,7 @@ import { openSession } from "./runner.ts";
 import { ChatLog, type ToolCall } from "./shapes.ts";
 import { spendCap, spendFile, spendGuard } from "./spend.ts";
 import { dollars, milliseconds } from "./summary.ts";
+import type { Tools } from "./tools.ts";
 
 // Where the customer's messages come from: a person typing, or a tuning case and its recording.
 export type ChatSource =
@@ -15,20 +16,32 @@ export type ChatSource =
   | { mode: "replay"; case_id: string };
 
 // The terminal. `conversation` shows what the customer and the agent said, as they said it.
-// `note` shows everything else, and chat passes every note through `redact` first.
+// `note` shows everything else, and chat passes every note through `redact` first, with the
+// customer names the functions have returned so far.
 export type ChatOutput = { conversation(line: string): void; note(line: string): void };
 
 const RESULT_CHARS = 200;
 
 const shown = (root: string, path: string) => relative(root, path).replaceAll("\\", "/");
 
-function callLine(call: ToolCall): string {
-  const { name, input, output } = redacted(call);
+function callLine(call: ToolCall, names: readonly string[]): string {
+  const { name, input, output } = redacted(call, names);
   const result = output.ok
     ? `ok ${JSON.stringify(output.data)}`
     : `${output.error.code}${output.error.code === "policy_denied" ? ` (${output.error.reason})` : ""}`;
   const line = `  · ${name} ${JSON.stringify(input)} → ${result}`;
   return line.length > RESULT_CHARS ? `${line.slice(0, RESULT_CHARS - 1)}…` : line;
+}
+
+// Every customer name in a function's answer: the order's `customer_name`, wherever an order sits in it.
+function customerNames(value: unknown, into: Set<string>): void {
+  if (Array.isArray(value)) value.forEach((child) => customerNames(child, into));
+  else if (value !== null && typeof value === "object") {
+    for (const [key, child] of Object.entries(value)) {
+      if (key === "customer_name" && typeof child === "string") into.add(child);
+      else customerNames(child, into);
+    }
+  }
 }
 
 const indented = (who: string, text: string) =>
@@ -38,7 +51,9 @@ const indented = (who: string, text: string) =>
     .join("\n");
 
 export async function chat(root: string, agent: Agent, source: ChatSource, out: ChatOutput): Promise<string> {
-  const note = (line: string) => out.note(redact(line));
+  const names = new Set<string>();
+  const mask = (text: string) => redact(text, [...names]);
+  const note = (line: string) => out.note(mask(line));
   const { shop, cases, orders } = await loadSplit(root, "tuning");
 
   let model: ModelClient | undefined;
@@ -86,7 +101,16 @@ export async function chat(root: string, agent: Agent, source: ChatSource, out: 
     note("Write as the customer. An empty line is skipped. End the input to finish.");
   }
 
-  const session = await openSession(agent, createBackend({ shop, orders }, { outage }), model && { model });
+  // Names are collected as each function answers, so a turn that fails after a lookup has them too.
+  const backend = createBackend({ shop, orders }, { outage });
+  const watched: Tools = {
+    async call(name, input) {
+      const result = await backend.call(name, input);
+      if (result.ok) customerNames(result.data, names);
+      return result;
+    },
+  };
+  const session = await openSession(agent, watched, model && { model });
   const file = join(root, "traces", "chat", agent.name, `${runName()}.json`);
   const started_at = new Date().toISOString();
   const save = () =>
@@ -96,7 +120,7 @@ export async function chat(root: string, agent: Agent, source: ChatSource, out: 
       orders: "tuning",
       ...(source.mode === "replay" && { replay_of: source.case_id }),
       started_at,
-      turns: redacted([...session.turns]),
+      turns: redacted([...session.turns], [...names]),
     });
 
   try {
@@ -106,7 +130,7 @@ export async function chat(root: string, agent: Agent, source: ChatSource, out: 
       if (echo) out.conversation(indented("customer", text));
       const turn = await session.say(text);
       await save();
-      for (const call of turn.tool_calls) note(callLine(call));
+      for (const call of turn.tool_calls) note(callLine(call, [...names]));
       out.conversation(indented("agent", turn.text));
       note(`  [${turn.status} · ${milliseconds(turn.duration_ms)} · ${dollars(turn.cost_usd)}]`);
       if (session.handedOver()) {
@@ -116,7 +140,7 @@ export async function chat(root: string, agent: Agent, source: ChatSource, out: 
     }
   } catch (error) {
     const why = error instanceof Error ? error.message : String(error);
-    throw new Error(redact(`the chat stopped: ${why}`), { cause: error });
+    throw new Error(mask(`the chat stopped: ${why}`), { cause: error });
   } finally {
     await session.close();
   }
@@ -125,5 +149,5 @@ export async function chat(root: string, agent: Agent, source: ChatSource, out: 
     session.turns.length > 0
       ? `The session log, with personal data masked, is ${shown(root, file)}.`
       : "No message was written, so no session log was saved.";
-  return redact(`${saved} ${await closing()}`);
+  return mask(`${saved} ${await closing()}`);
 }

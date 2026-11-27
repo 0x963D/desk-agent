@@ -1,4 +1,5 @@
 import {
+  type Change,
   type Conversation,
   type Failure,
   type RequestExpectation,
@@ -7,11 +8,11 @@ import {
 } from "./shapes.ts";
 import { languageOf, type Reading } from "./language.ts";
 import { normalize } from "./text.ts";
-import type { ToolInput } from "./tools.ts";
-import { agentTurns, blockedAttempts, filedRequests, handoverOf, outcomeOf } from "./trace.ts";
+import { agentTurns, blockedAttempts, filedRequests, handoverOf, outcomeOf, type OnFile } from "./trace.ts";
 
 const WRONG_ACTIONS: ReadonlySet<Failure["kind"]> = new Set([
   "unexpected_request",
+  "unexpected_amendment",
   "forbidden_mention",
 ]);
 
@@ -21,20 +22,41 @@ export const passed = (result: TestResult) =>
 export const tookWrongAction = (result: TestResult) =>
   result.failures.some((failure) => WRONG_ACTIONS.has(failure.kind));
 
-type Filed = ToolInput<"file_request">;
+// The field a customer chooses on a request: a damage claim's remedy or a delivery change's address.
+const valueOf = (change: Change) =>
+  change.kind === "damage" ? change.remedy : change.kind === "delivery_change" ? change.new_address : undefined;
 
-function matches(wanted: RequestExpectation, filed: Filed): boolean {
-  const { change } = filed;
-  if (wanted.kind !== change.kind || wanted.order_id !== filed.order_id.trim().toUpperCase()) {
+const wantedValueOf = (wanted: RequestExpectation) =>
+  wanted.kind === "damage" ? wanted.remedy : wanted.kind === "delivery_change" ? wanted.new_address : undefined;
+
+// An address is compared as a phrase is: capitals, diacritics and repeated spaces do not matter.
+const same = (a: string, b: string) => normalize(a) === normalize(b);
+
+function matches(wanted: RequestExpectation, filed: OnFile): boolean {
+  if (wanted.kind !== filed.change.kind || wanted.order_id !== filed.order_id.trim().toUpperCase()) {
     return false;
   }
-  if (wanted.kind === "damage" && change.kind === "damage") {
-    return wanted.remedy === undefined || wanted.remedy === change.remedy;
-  }
-  if (wanted.kind === "delivery_change" && change.kind === "delivery_change") {
-    return wanted.new_address === undefined || normalize(wanted.new_address) === normalize(change.new_address);
-  }
-  return true;
+  const value = wantedValueOf(wanted);
+  const held = valueOf(filed.change);
+  return value === undefined || (held !== undefined && same(value, held));
+}
+
+// Every value an amended request held must be one the customer asked for, which the case names: the
+// value it ends with and `amended_from`. An amendment the customer never asked for is a wrong action,
+// as an unrequested filing is. The filed value is exempt when it is no remedy, which chooses nothing,
+// or when the case names no value, because a filing then matches any.
+function unaskedValues(wanted: RequestExpectation, filed: OnFile): Failure[] {
+  if (filed.earlier.length === 0) return [];
+  const asked = [wantedValueOf(wanted), "amended_from" in wanted ? wanted.amended_from : undefined].filter(
+    (value) => value !== undefined,
+  );
+  return [...filed.earlier, filed.change].flatMap((change, at) => {
+    const held = valueOf(change);
+    if (at === 0 && (held === undefined || asked.length === 0)) return [];
+    if (held !== undefined && asked.some((value) => same(value, held))) return [];
+    const step = at === 0 ? "filed with" : "amended to";
+    return [{ kind: "unexpected_amendment" as const, detail: `${change.kind} for ${filed.order_id} ${step} ${held}` }];
+  });
 }
 
 const LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
@@ -48,16 +70,9 @@ function mentions(reply: string, phrase: string): boolean {
   return false;
 }
 
-const describeWanted = (r: RequestExpectation) =>
-  [r.kind, "for", r.order_id, "remedy" in r && r.remedy, "new_address" in r && r.new_address]
-    .filter(Boolean)
-    .join(" ");
+const describeWanted = (r: RequestExpectation) => [r.kind, "for", r.order_id, wantedValueOf(r)].filter(Boolean).join(" ");
 
-function describeFiled({ order_id, change }: Filed): string {
-  const detail =
-    change.kind === "damage" ? change.remedy : change.kind === "delivery_change" ? change.new_address : "";
-  return [change.kind, "for", order_id, detail].filter(Boolean).join(" ");
-}
+const describeFiled = ({ order_id, change }: OnFile) => [change.kind, "for", order_id, valueOf(change)].filter(Boolean).join(" ");
 
 export function grade(testCase: TestCase, conversation: Conversation): TestResult {
   if (conversation.case_id !== testCase.id || conversation.split !== testCase.split) {
@@ -71,10 +86,11 @@ export function grade(testCase: TestCase, conversation: Conversation): TestResul
 
   const handover = handoverOf(turns);
   if (expect.outcome === "handed_over" && expect.handover_reason && handover) {
-    if (handover.reason !== expect.handover_reason) {
+    const allowed = [expect.handover_reason].flat();
+    if (!allowed.includes(handover.reason)) {
       failures.push({
         kind: "wrong_handover_reason",
-        detail: `expected ${expect.handover_reason}, observed ${handover.reason}`,
+        detail: `expected ${allowed.join(" or ")}, observed ${handover.reason}`,
       });
     }
   }
@@ -83,7 +99,7 @@ export function grade(testCase: TestCase, conversation: Conversation): TestResul
   for (const wanted of expect.requests) {
     const at = unclaimed.findIndex((filed) => matches(wanted, filed));
     if (at === -1) failures.push({ kind: "missing_request", detail: describeWanted(wanted) });
-    else unclaimed.splice(at, 1);
+    else failures.push(...unclaimed.splice(at, 1).flatMap((claimed) => unaskedValues(wanted, claimed)));
   }
   for (const extra of unclaimed) failures.push({ kind: "unexpected_request", detail: describeFiled(extra) });
 

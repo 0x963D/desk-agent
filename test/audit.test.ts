@@ -4,7 +4,8 @@ import { expect, test } from "vitest";
 import { agreementReport, kappa, parseVerdicts } from "../src/agreement.ts";
 import { agents } from "../src/agents/index.ts";
 import { main } from "../src/cli.ts";
-import { readJson } from "../src/files.ts";
+import { loadSplit, readJson } from "../src/files.ts";
+import { hashCaseFiles } from "../src/ledger.ts";
 import { passed } from "../src/grade.ts";
 import { buildPacket, type Source } from "../src/packet.ts";
 import { AuditKey, Conversation, Criterion, TestResult, type Verdict } from "../src/shapes.ts";
@@ -140,13 +141,14 @@ const lines = (...verdicts: unknown[]) => verdicts.map((v) => JSON.stringify(v))
 
 test("a verdict file that judges every conversation loads", () => {
   const loaded = parseVerdicts(
-    `${lines(verdict("c"), verdict("a", ["facts"], "Turn 4 states a time no function gave."), verdict("b"))}\n`,
+    `${lines(verdict("c"), verdict("a", ["facts"], "Turn 4 states a time no function gave."), verdict("b", ["reply"], "Turns 2 and 4 answer in Romanian."))}\n`,
     "reader.jsonl",
     IDS,
   );
 
   expect([...loaded.keys()].sort()).toEqual(IDS);
   expect(loaded.get("a")).toMatchObject({ acceptable: false, facts: false, outcome: true });
+  expect(loaded.get("b")).toMatchObject({ acceptable: false, reply: false });
 });
 
 test.each([
@@ -283,22 +285,23 @@ test("the saved model runs build a packet of every scored validation conversatio
 
   const printed = await main(["audit-packet", "--out", out, "--key", keyFile, "--seed", "test"], ROOT);
 
-  // Every model agent with a scored validation run is in the packet, with all 18 cases of each run.
-  // The counts come from the saved runs, so scoring another agent does not change this test.
+  // Every model agent scored on the current validation cases is in the packet, with every case of its
+  // newest such run. The counts come from the saved runs, so scoring another agent does not change this test.
   const key = await readJson(keyFile, AuditKey);
+  const current = await hashCaseFiles(ROOT, "held-out");
+  const cases = (await loadSplit(ROOT, "held-out")).cases.length;
   const ledger = (await readFile(join(ROOT, "results", "ledger.jsonl"), "utf8")).trim().split("\n")
-    .map((line) => JSON.parse(line) as { agent: string; summary: { split: string } });
-  const scored = new Set(ledger.filter((e) => e.summary.split === "held-out" && agents.get(e.agent)?.liveModel).map((e) => e.agent));
+    .map((line) => JSON.parse(line) as { agent: string; run: string; cases_sha256: string; summary: { split: string } })
+    .filter((e) => e.summary.split === "held-out" && e.cases_sha256 === current && agents.get(e.agent)?.liveModel);
+  const newest = new Map(ledger.map((e) => [e.agent, e.run]));
   const perAgent = Map.groupBy(key.conversations, (c) => c.agent);
-  expect(new Set(perAgent.keys())).toEqual(scored);
-  let runs = 0;
-  for (const list of perAgent.values()) {
-    const agentRuns = new Set(list.map((c) => c.run)).size;
-    expect(list).toHaveLength(18 * agentRuns);
-    runs += agentRuns;
+  expect(new Set(perAgent.keys())).toEqual(new Set(newest.keys()));
+  for (const [agent, list] of perAgent) {
+    expect(new Set(list.map((c) => c.run))).toEqual(new Set([newest.get(agent)]));
+    expect(list).toHaveLength(cases);
   }
   const total = key.conversations.length;
-  expect(printed).toContain(`packet: ${total} conversations from ${runs} runs`);
+  expect(printed).toContain(`packet: ${total} conversations from ${perAgent.size} runs`);
   expect(printed).toMatch(/not reached: \d+ conversations stopped at a handover before the script's last customer message/);
   expect((await readdir(join(out, "conversations"))).length).toBe(total);
   expect(await readFile(join(out, "judging.md"), "utf8")).toBe(await readFile(join(ROOT, "docs", "judging.md"), "utf8"));

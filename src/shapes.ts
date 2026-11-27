@@ -28,6 +28,9 @@ export const Category = z.enum([
   "shop-question",
 ]);
 
+export const PrintKind = z.enum(["open", "limited", "commission"]);
+export const OrderStatus = z.enum(["paid", "in_production", "shipped", "delivered"]);
+
 export const OrderId = z.string().regex(/^SC-\d{4}$/, "an order number is SC- and four digits");
 export const Email = z.string().regex(/^[^@\s]+@example\.com$/i, "every email is at example.com");
 const IsoDate = z.iso.date();
@@ -41,7 +44,7 @@ const orderFields = {
     .array(
       z.strictObject({
         title: z.string().min(1),
-        kind: z.enum(["open", "limited", "commission"]),
+        kind: PrintKind,
         size: z.string().min(1),
         price_ron: z.number().positive(),
       }),
@@ -55,12 +58,12 @@ const TrackingUrl = z.url({ hostname: /^curier\.example$/ });
 
 export const Order = z
   .discriminatedUnion("status", [
-    z.strictObject({ ...orderFields, status: z.literal("paid") }),
-    z.strictObject({ ...orderFields, status: z.literal("in_production") }),
-    z.strictObject({ ...orderFields, status: z.literal("shipped"), tracking_url: TrackingUrl }),
+    z.strictObject({ ...orderFields, status: z.literal(OrderStatus.enum.paid) }),
+    z.strictObject({ ...orderFields, status: z.literal(OrderStatus.enum.in_production) }),
+    z.strictObject({ ...orderFields, status: z.literal(OrderStatus.enum.shipped), tracking_url: TrackingUrl }),
     z.strictObject({
       ...orderFields,
-      status: z.literal("delivered"),
+      status: z.literal(OrderStatus.enum.delivered),
       tracking_url: TrackingUrl,
       delivered_on: IsoDate,
     }),
@@ -121,6 +124,21 @@ export const Change = z.discriminatedUnion("kind", [
 ]);
 export type Change = z.infer<typeof Change>;
 
+// What `amend_request` may change on a filed request: a damage claim's remedy or a delivery
+// change's address. A cancellation and a return carry nothing to change.
+export const Amendment = z.discriminatedUnion(
+  "kind",
+  [
+    z.object({ kind: z.literal("damage"), remedy: Remedy.describe("The remedy the customer now says they want.") }),
+    z.object({ kind: z.literal("delivery_change"), new_address: FilledText }),
+  ],
+  { error: "Only a damage claim's remedy or a delivery change's address can be amended. A cancellation or a return has nothing to amend." },
+);
+export type Amendment = z.infer<typeof Amendment>;
+
+// The request on file after an amendment of the same kind: the amended field replaced, the rest kept.
+export const amended = (change: Change, amendment: Amendment): Change => Change.parse({ ...change, ...amendment });
+
 export const HandoverReason = z.enum([
   "customer_asked",
   "complaint",
@@ -144,6 +162,8 @@ export const DenialReason = z.enum([
   "commissioned_work",
   "large_refund",
   "duplicate",
+  "nothing_to_amend",
+  "other_kind",
 ]);
 export type DenialReason = z.infer<typeof DenialReason>;
 
@@ -160,6 +180,7 @@ export const ToolName = z.enum([
   "lookup_account",
   "check_policy",
   "file_request",
+  "amend_request",
   "hand_over",
 ]);
 export type ToolName = z.infer<typeof ToolName>;
@@ -172,12 +193,14 @@ export const CallOutput = z.discriminatedUnion("ok", [
 export const ToolCall = z.strictObject({ name: ToolName, input: z.unknown(), output: CallOutput });
 export type ToolCall = z.infer<typeof ToolCall>;
 
+export const ReplyStatus = z.enum(["open", "resolved", "refused"]);
+
 export const Turn = z.discriminatedUnion("role", [
   z.strictObject({ role: z.literal("customer"), text: z.string() }),
   z.strictObject({
     role: z.literal("agent"),
     text: z.string(),
-    status: z.enum(["open", "resolved", "refused"]),
+    status: ReplyStatus,
     tool_calls: z.array(ToolCall),
     duration_ms: z.number().nonnegative(),
     cost_usd: z.number().nonnegative(),
@@ -196,7 +219,8 @@ export const Conversation = z.strictObject({
 export type Conversation = z.infer<typeof Conversation>;
 
 // The log of one `pnpm chat` session, saved under traces/chat/. Every string in its turns has
-// passed through `redact`, so it holds no email, phone number, card number, IBAN or street.
+// passed through `redact`, so it holds no email, phone number, card number, IBAN or street, and no
+// customer name that a function returned in the chat.
 export const ChatLog = z.strictObject({
   conversation_id: z.string(),
   agent: z.string(),
@@ -207,15 +231,24 @@ export const ChatLog = z.strictObject({
 });
 export type ChatLog = z.infer<typeof ChatLog>;
 
+// `amended_from` names the value the customer asked for before they changed it, so the request may
+// hold that value before its amendment. A case names it only beside the value the request ends with.
+const FROM_NEEDS_END = { message: "a case names amended_from only beside the value it ends with", path: ["amended_from"] };
+
 export const RequestExpectation = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("cancellation"), order_id: OrderId }),
   z.strictObject({ kind: z.literal("return"), order_id: OrderId }),
-  z.strictObject({ kind: z.literal("damage"), order_id: OrderId, remedy: Remedy.optional() }),
-  z.strictObject({
-    kind: z.literal("delivery_change"),
-    order_id: OrderId,
-    new_address: z.string().min(1).optional(),
-  }),
+  z
+    .strictObject({ kind: z.literal("damage"), order_id: OrderId, remedy: Remedy.optional(), amended_from: Remedy.optional() })
+    .refine((r) => r.amended_from === undefined || r.remedy !== undefined, FROM_NEEDS_END),
+  z
+    .strictObject({
+      kind: z.literal("delivery_change"),
+      order_id: OrderId,
+      new_address: z.string().min(1).optional(),
+      amended_from: z.string().min(1).optional(),
+    })
+    .refine((r) => r.amended_from === undefined || r.new_address !== undefined, FROM_NEEDS_END),
 ]);
 export type RequestExpectation = z.infer<typeof RequestExpectation>;
 
@@ -237,7 +270,8 @@ export const Expectation = z.discriminatedUnion("outcome", [
   }),
   z.strictObject({
     outcome: z.literal("handed_over"),
-    handover_reason: HandoverReason.optional(),
+    // One reason, or the reasons that apply together in the same turn, any of which passes.
+    handover_reason: z.union([HandoverReason, z.array(HandoverReason).min(2)]).optional(),
     requests: Requests,
     reply_mentions: Phrases,
     reply_never_mentions: Phrases,
@@ -259,7 +293,7 @@ export const TestCase = z
     category: Category,
     summary: z.string().min(1),
     outage: z.boolean().default(false),
-    turns: z.array(z.string().min(1)).min(1).max(4),
+    turns: z.array(z.string().min(1)).min(1).max(12),
     expect: Expectation,
   })
   .refine((c) => c.id.startsWith(`${c.language}-`), {
@@ -273,6 +307,7 @@ export const Failure = z.strictObject({
     "wrong_handover_reason",
     "missing_request",
     "unexpected_request",
+    "unexpected_amendment",
     "missing_mention",
     "forbidden_mention",
     "empty_reply",
@@ -309,7 +344,7 @@ export const Verdict = z
     message: "acceptable is true exactly when no criterion fails",
     path: ["acceptable"],
   })
-  .refine((v) => v.acceptable || /\bturn \d+\b/i.test(v.note), {
+  .refine((v) => v.acceptable || /\bturns? \d+\b/i.test(v.note), {
     message: "a note on a failure names the turn, such as turn 4",
     path: ["note"],
   });

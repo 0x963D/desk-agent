@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import { loadOrders, loadShop } from "../src/files.ts";
 import { redact, redacted } from "../src/redact.ts";
+import { Turn } from "../src/shapes.ts";
 import { ROOT } from "./helpers.ts";
 
 test.each([
@@ -61,6 +62,41 @@ test("every delivery address in the tuning orders is masked", async () => {
   }
 });
 
+test.each([
+  ["the full name", "Order for Irina Pavel.", "Order for [name]."],
+  ["each part alone, in any case", "irina wrote, then PAVEL", "[name] wrote, then [name]"],
+  ["a full name split by more spaces", "Irina   Pavel", "[name]"],
+  ["a name typed without its diacritics", "stefan ionescu-popa and Popa", "[name] and [name]"],
+  ["a name inside an email, which goes as the email", "irina.pavel@example.com", "[email]"],
+])("a name given to redact is masked as %s", (_, text, masked) => {
+  expect(redact(text, ["Irina Pavel", "Ștefan Ionescu-Popa"])).toBe(masked);
+});
+
+test.each([
+  ["a name typed decomposed", "Ștefan wrote".normalize("NFD"), ["Ștefan Pop"], "[name] wrote"],
+  ["a name returned decomposed", "Ștefan wrote", ["Ștefan Pop".normalize("NFD")], "[name] wrote"],
+  ["a name typed with a cedilla where the order has a comma below", "Şerban wrote", ["Șerban Pop"], "[name] wrote"],
+  ["two parts of a longer name, joined by a hyphen", "Ana-Maria wrote", ["Ana Maria Pop"], "[name] wrote"],
+  ["two parts of a longer name, in the order they come", "Ana Maria wrote", ["Ana Maria Pop"], "[name] wrote"],
+  ["a part joined by a hyphen to another name", "Maria-Irina wrote", ["Irina Pavel"], "Maria-[name] wrote"],
+  ["a name with a Romanian article after a hyphen", "comanda Pavel-ului", ["Irina Pavel"], "comanda [name]-ului"],
+  ["a part of the name in a city joined by a hyphen", "Cluj-Napoca", ["Ana Napoca"], "Cluj-[name]"],
+])("%s is masked", (_, text, names, masked) => {
+  expect(redact(text, names)).toBe(masked);
+});
+
+test.each([
+  ["a longer word that starts with the name", "Irinaaa and Paveliu", ["Irina Pavel"]],
+  ["a name that was not given", "Toma Ilie", ["Irina Pavel"]],
+  ["an order number that starts with a part of the name", "Comanda SC-1004 si sc-1005", ["Ion Sc"]],
+])("%s stays when names are given", (_, text, names) => {
+  expect(redact(text, names)).toBe(text);
+});
+
+test("redact masks no name unless it is given one", () => {
+  expect(redact("Irina Pavel")).toBe("Irina Pavel");
+});
+
 test("redacted masks every string in a value and leaves the value itself alone", () => {
   const value = {
     order_id: "SC-1003",
@@ -77,4 +113,37 @@ test("redacted masks every string in a value and leaves the value itself alone",
     emails: ["[email]"],
   });
   expect(value).toEqual(before);
+});
+
+test("redacted keeps a closed field whose value is also a customer's name, and masks the name in free text", () => {
+  const turn = {
+    role: "agent",
+    text: "Open, your print is on its way.",
+    status: "open",
+    tool_calls: [
+      {
+        name: "lookup_order",
+        input: { order_id: "SC-1004", email: "ion.open@example.com" },
+        output: { ok: true, data: { customer_name: "Ion Open", status: "paid", items: [{ title: "Open sky", kind: "open" }] } },
+      },
+    ],
+    duration_ms: 1,
+    cost_usd: 0,
+  };
+
+  const masked = redacted(turn, ["Ion Open"]);
+
+  expect(Turn.parse(masked)).toMatchObject({ status: "open", text: "[name], your print is on its way." });
+  expect(masked.tool_calls[0]!.output.data).toEqual({
+    customer_name: "[name]",
+    status: "paid",
+    items: [{ title: "[name] sky", kind: "open" }],
+  });
+  expect(redacted({ status: "Ion Open" }, ["Ion Open"])).toEqual({ status: "[name]" });
+});
+
+test("redacted masks a name in a closed field whose value is not in that field's list", () => {
+  const value = { items: [{ kind: "pavel" }], reason: "irina", status: "open" };
+
+  expect(redacted(value, ["Irina Pavel", "Ion Open"])).toEqual({ items: [{ kind: "[name]" }], reason: "[name]", status: "open" });
 });

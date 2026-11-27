@@ -66,5 +66,5 @@ if (import.meta.main) {
   const shop = await loadShop(root);
   const orders = await loadOrders(root, "tuning", shop);
   serveStdio(() => shopServer(createBackend({ shop, orders })));
-  console.error(`The five Studio Cobalt functions are on stdio, over the ${orders.length} tuning orders.`);
+  console.error(`The six Studio Cobalt functions are on stdio, over the ${orders.length} tuning orders.`);
 }

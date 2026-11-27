@@ -1,6 +1,6 @@
 # Design
 
-This page explains the foundation of the support agent for Studio Cobalt: the data shapes, the five functions and the MCP server that carries them, the runner, the recorder, the grader and the scoring record. It records what was chosen, what was considered, and why the alternatives lost. [The scope](scope.md) holds the shop policy, and [the case contract](writing-cases.md) holds the case and fixture formats. This page does not repeat them.
+This page explains the foundation of the support agent for Studio Cobalt: the data shapes, the six functions and the MCP server that carries them, the runner, the recorder, the grader and the scoring record. It records what was chosen, what was considered, and why the alternatives lost. [The scope](scope.md) holds the shop policy, and [the case contract](writing-cases.md) holds the case and fixture formats. This page does not repeat them.
 
 Nothing here calls a model or the network unless a command is given `--record`, or `pnpm chat` talks live to a model agent.
 
@@ -11,7 +11,7 @@ Nothing here calls a model or the network unless a command is given `--record`, 
 	pnpm score --set final       # the same on cases/final
 	pnpm regrade <run directory> # grade a saved run again, without the agent
 	pnpm replay                  # run cases/tuning for every agent that can run offline
-	pnpm report                  # per scored set, each agent's runs on the latest run's cases and code, regraded from results/
+	pnpm report                  # per scored set, each agent's runs on its current cases and latest code, regraded from results/
 	pnpm report --markdown       # the same table as Markdown
 	pnpm report --runs           # every line of results/ledger.jsonl, oldest first; --markdown for Markdown
 	pnpm report --check-readme   # fail when the README's table is not the current report --markdown
@@ -20,7 +20,7 @@ Nothing here calls a model or the network unless a command is given `--record`, 
 	pnpm tune --agent rule-based # pick an agent from the registry
 	pnpm tune --agent plain-gpt-6-luna   # the model agent, replayed from recordings/
 	pnpm tune --record           # call the agent's live model and write recordings/<agent>/tuning/
-	pnpm mcp                     # serve the five functions over stdio, on the tuning orders
+	pnpm mcp                     # serve the six functions over stdio, on the tuning orders
 	pnpm chat --agent <name>     # type as the customer and the agent answers, on the tuning orders
 	pnpm chat --agent <name> --replay <tuning case id>   # play a tuning case's recording, offline
 	pnpm audit:packet --out <dir> --key <file> [--seed <text>]   # a blind packet of the scored model conversations
@@ -30,10 +30,10 @@ Git ignores `traces/`, which holds the tuning runs and the chat session logs, an
 
 ## Read the code in this order
 
-The source is about 3,300 lines in 29 files. `wc -l src/*.ts src/agents/*.ts` regenerates the count.
+The source is about 3,850 lines in 31 files. `wc -l src/*.ts src/agents/*.ts` regenerates the count.
 
 1. `src/shapes.ts` names every shape that crosses a file or a function boundary.
-2. `src/tools.ts` holds the five function contracts.
+2. `src/tools.ts` holds the six function contracts.
 3. `src/backend.ts` is the in-memory shop. It verifies the customer and enforces the policy.
 4. `src/mcp.ts` serves the backend as an MCP server and reads it back through an MCP client. It is also the stdio entry.
 5. `src/agent.ts` is the agent boundary. `src/model.ts` replays and records model calls, and `src/spend.ts` caps what a recording or a live chat may spend. `src/snapshot.ts` is the one deep copy that the backend, the runner and the recorder share.
@@ -77,9 +77,9 @@ Seven choices in the shapes and the loader remove states that should not exist.
 
 Data fields use `snake_case` everywhere, in case files, traces, function inputs and code.
 
-## The five functions
+## The six functions
 
-`contracts` in `src/tools.ts` maps each function to a description, an input schema and an output schema. The MCP server lists each function with `z.toJSONSchema(contracts[name].input)` as its input schema, and a test checks through an MCP client that each root is an object. A union at the root is not an object schema, and some MCP clients and model APIs reject it. That is why `file_request` keeps its union one level down, in `change`.
+`contracts` in `src/tools.ts` maps each function to a description, an input schema and an output schema. The MCP server lists each function with `z.toJSONSchema(contracts[name].input)` as its input schema, and a test checks through an MCP client that each root is an object. A union at the root is not an object schema, and some MCP clients and model APIs reject it. That is why `file_request` and `amend_request` keep their union one level down, in `change`.
 
 | Function | Input | Output |
 | --- | --- | --- |
@@ -87,9 +87,10 @@ Data fields use `snake_case` everywhere, in case files, traces, function inputs 
 | `lookup_account` | `email`, `order_id` | The orders placed with that email: number, status, date and total. |
 | `check_policy` | `topic`, and `order_id` with `email` or neither | The rule in Romanian and English. For a request kind and a verified order, a decision as well. |
 | `file_request` | `order_id`, `email`, `change` | A request id with the status `pending_approval`. |
+| `amend_request` | `order_id`, `email`, `request_id`, `change` | The same request id with the status `pending_approval`. |
 | `hand_over` | `reason`, `summary`, optional `order_id` | A handover id. |
 
-A damage claim names `remedy` only when the customer chose a reprint or a refund. The field is optional, because the scope lets staff decide after a photo, and a required field made the agent ask a question that the customer had no reason to answer. A new address, a damage description and a handover summary must hold more than spaces, or the function answers `invalid_input`. A customer is verified when a function receives an order number and the email on that order. The comparison ignores capitals and surrounding spaces. An unknown order and a wrong email return the same `not_found` error, so the answer reveals nothing about which one was wrong.
+A damage claim names `remedy` only when the customer chose a reprint or a refund. The field is optional, because the scope lets staff decide after a photo, and a required field made the agent ask a question that the customer had no reason to answer. A new address, a damage description and a handover summary must hold more than spaces, or the function answers `invalid_input`. A new address must also hold a number, such as a street number or a postcode. The backend checks that and the contract does not, because the contract also reads the conversations saved before the check, and three of them hold an accepted address with no number. A customer is verified when a function receives an order number and the email on that order. The comparison ignores capitals and surrounding spaces. An unknown order and a wrong email return the same `not_found` error, so the answer reveals nothing about which one was wrong.
 
 Errors are values: `{ ok: false, error: { code, message } }`. The message is written for a model to read and act on. The four codes are `invalid_input`, `not_found`, `policy_denied` and `unavailable`. A `policy_denied` error also carries one reason from a closed list.
 
@@ -102,6 +103,10 @@ Errors are values: `{ ok: false, error: { code, message } }`. The message is wri
 | `return` | The order holds commissioned work. | `commissioned_work` |
 | `cancellation`, `return`, `damage` with `remedy: refund` | The refund, which is the order total, is above 1,000 lei. | `large_refund` |
 | Any | A request of the same kind is already on file for the order. | `duplicate` |
+| An amendment | The request on file is a cancellation or a return. | `nothing_to_amend` |
+| An amendment | The request on file is of another kind than the change. | `other_kind` |
+
+`amend_request` changes a request this conversation filed while it awaits approval. Its `change` is an `Amendment`: a damage claim's `remedy`, required here, or a delivery change's `new_address`. A cancellation or a return has nothing to amend, so `Amendment` holds neither kind, and a change of either kind answers `invalid_input`, because no request on file could take it. The customer is verified as for every function. A request id that this conversation's `file_request` never returned, or one it returned for another order, answers `not_found`, the code an unverified customer gets, with its own message. A well-formed change that the request on file cannot take is a policy denial, so it counts as a blocked attempt: a cancellation or a return on file answers `nothing_to_amend`, and a request of another kind than the change answers `other_kind` and names the request's kind. `invalid_input` is kept for input that is malformed whatever is on file. The amended request is then checked against the table above, apart from the duplicate row, because the request is already on file: a damage claim amended to a refund above the limit answers `large_refund`, and a delivery change amended after shipping answers `already_shipped`. A refused amendment changes nothing. The backend keeps one record per request, keyed by its id, so an amendment replaces the field it names and keeps the rest, such as the damage description.
 
 The windows and the limit come from `fixtures/shop.yaml`, and every window counts from its business date. When a case sets `outage: true`, every function except `hand_over` answers `unavailable`. A second `hand_over` returns the same id, and the trace keeps the first handover.
 
@@ -109,7 +114,7 @@ The fake backend is built again from the fixtures for each conversation, so no c
 
 ## The MCP server
 
-`shopServer` in `src/mcp.ts` serves one backend over MCP with the official TypeScript SDK, `@modelcontextprotocol/server` and `@modelcontextprotocol/client` at exactly 2.4.0. `tools/list` returns `toolDefinitions`: the five names, their descriptions and their input schemas. `tools/call` hands the arguments to the backend unchanged and answers with the function result as `structuredContent`, the same result as JSON text in `content`, and `isError` set when the result is `ok: false`. A function error is therefore a tool result the model reads, never a JSON-RPC error. A name that is not one of the five answers `invalid_input` the same way.
+`shopServer` in `src/mcp.ts` serves one backend over MCP with the official TypeScript SDK, `@modelcontextprotocol/server` and `@modelcontextprotocol/client` at exactly 2.4.0. `tools/list` returns `toolDefinitions`: the six names, their descriptions and their input schemas. `tools/call` hands the arguments to the backend unchanged and answers with the function result as `structuredContent`, the same result as JSON text in `content`, and `isError` set when the result is `ok: false`. A function error is therefore a tool result the model reads, never a JSON-RPC error. A name that is not one of the six answers `invalid_input` the same way.
 
 `remoteTools` turns an MCP client back into `Tools`. It parses the structured content, and on success parses the data with the function's output schema, so a malformed answer fails loudly at the boundary.
 
@@ -144,7 +149,7 @@ Every case also requires that each agent reply holds text. A reply that is empty
 
 Every case also requires that each reply is in the language of the customer message it answers, so a reply follows a customer who switches. `languageOf` in `src/language.ts` reads a message as `ro`, `en` or `unsure` from its words alone. It drops links, emails, order numbers and other numbers, strips diacritics, and counts the words that appear in a list of common words of one language only. A word both languages use, such as `a`, `in`, `am` or `are`, is in neither list. A message reads as one language only when it has at least 4 words, at least 3 of them from that language's list, and at most one word from the other list for every five. Anything else reads as `unsure`: a short reply, a reply that is mostly an order number or a link, and mixed text. A reply fails as `wrong_language` only when both readings are sure and they differ. It is not a wrong action.
 
-On the 44 customer turns of the tuning set, where the case's `language` field and a reading by hand of the four turns that switch give the truth, it reads 42 right, none wrong and 2 as `unsure`. A test holds it to none wrong and at least 90% sure. Every reply it failed in the tuning runs of this page was read by hand, and each was in the other language.
+On the 99 customer turns of the tuning set, where the case's `language` field and a reading by hand of the turns that switch give the truth, it reads 90 right, none wrong and 9 as `unsure`. A test holds it to none wrong and at least those 90 right, a count rather than a share, so a larger set cannot lower the floor. Every reply it failed in the tuning runs of this page was read by hand, and each was in the other language.
 
 | Alternative | Verdict | Why |
 | --- | --- | --- |
@@ -155,13 +160,15 @@ On the 44 customer turns of the tuning set, where the case's `language` field an
 
 ## Contested point 2: where the effects come from
 
-The filed requests and the handover are the accepted `file_request` and `hand_over` calls in the turns. The runner never reads the backend's own state.
+The requests on file are the accepted `file_request` calls in the turns, each with the accepted `amend_request` calls that name its request id applied in order. The handover is the first accepted `hand_over` call. The runner never reads the backend's own state.
 
 | Alternative | Verdict | Why |
 | --- | --- | --- |
 | Read the requests and the handover from the backend after the run. | Rejected. | A real MCP server will not expose its private state to the runner. The conversation would also hold two records of one fact, and they could disagree. |
 | Store the derived requests in the conversation. | Rejected. | The copy repeats what the turns already hold, and a regrade would have to trust it. |
 | Derive the effects from the trace. | Chosen. | The trace is the single record. It holds the input that the function accepted, and a regrade reads nothing else. |
+
+A case's `requests` therefore names each request as it stands at the end. A claim filed without a remedy and amended to a reprint is one damage claim with `remedy: reprint`, never two. `filedRequests` also returns the changes each request held before, which the grader checks against the case.
 
 Because `createBackend` returns only `Tools`, the runner has nothing else to read. A test runs a case against a backend that only answers calls and grades the saved trace.
 
@@ -183,9 +190,9 @@ The runner plays every customer turn until a handover appears, because a person 
 
 ## Contested point 4: what counts as a wrong action
 
-A conversation has a wrong action when a filed request is one the case does not expect, or when a reply contains a phrase from `reply_never_mentions`. `WRONG_ACTIONS` in `src/grade.ts` is the one place that draws this line.
+A conversation has a wrong action when a request on file at the end is one the case does not expect, when an amended request held a value the case does not name, or when a reply contains a phrase from `reply_never_mentions`. An amendment the customer never asked for is a wrong action by the same rule as a filing. Grading only the end state missed two: a claim whose case leaves `remedy` out, amended to a refund nobody asked for, matched; and a refund nobody asked for, amended to the reprint the customer wanted, vanished. So each request on file keeps the changes it held, and every one of them must be the value the request ends with or the case's `amended_from`, the value the customer asked for before they changed it. A claim filed without a remedy chose nothing, and a case that names no value lets the filing hold any, so in those two only the amendments are checked. A failure here is `unexpected_amendment`. `WRONG_ACTIONS` in `src/grade.ts` is the one place that draws this line.
 
-The function enforces the policy, as the scope requires. A request that the policy forbids is therefore rejected and never filed. The summary reports such conversations as blocked attempts: the conversations in which `file_request` was rejected with `policy_denied` or `not_found`.
+The function enforces the policy, as the scope requires. A request that the policy forbids is therefore rejected and never filed. The summary reports such conversations as blocked attempts: the conversations in which `file_request` or `amend_request` was rejected with `policy_denied` or `not_found`. An amendment that names a request id the conversation never filed is `not_found`, and one that the request on file cannot take, such as a damage claim turned into a delivery change, is `policy_denied`, so both count too.
 
 | Alternative | Verdict | Why |
 | --- | --- | --- |
@@ -199,7 +206,7 @@ A wrong action that the function cannot catch is still caught by the grader. An 
 
 ## Contested point 5: how a filed request matches an expected one
 
-A filed request matches when its kind and its order number match. When the case names `remedy` or `new_address`, that field must match too. An address is compared after the same normalisation as a phrase: capitals, diacritics and repeated spaces are ignored.
+A request on file matches when its kind and its order number match, after its amendments. When the case names `remedy` or `new_address`, that field must match too. An amended request is then checked step by step, as [contested point 4](#contested-point-4-what-counts-as-a-wrong-action) says. An address is compared after the same normalisation as a phrase: capitals, diacritics and repeated spaces are ignored.
 
 | Alternative | Verdict | Why |
 | --- | --- | --- |
@@ -292,7 +299,7 @@ A summary needs one result for every case of its split. An interrupted run leave
 
 ## The report and the one-command check
 
-`pnpm report` prints the numbers the README may quote, one table per scored set, the final set first. It reads `results/ledger.jsonl`. For each agent on a set, a row covers every scored run with the same cases and the same code as the agent's latest run on that set. It grades each run's saved conversations again with `grade` and `summarize`, the same code that scored them, and compares every field of each new summary with the summary on its ledger line. One differing field stops the report with the field, both values and the likely cause: the cases changed since the score, or they did not and the grader or the saved conversations did. When every run agrees, the row gives each count as the total over its runs, the share of their conversations, and the lowest and highest count in one run, such as `47/54 (87%), per run 15–16`. The turn times are nearest-rank over every turn of those runs, and the cost is their total over their conversations. The row names its number of runs, the start of the code hash, the commit of the latest run, marked `(dirty)` when that tree was dirty, and the number of lines the agent has for the set, so a reader sees how often the set was used. The report writes nothing and adds no ledger line.
+`pnpm report` prints the numbers the README may quote, one table per scored set, the final set first. It reads `results/ledger.jsonl`. For each agent on a set, a row covers every scored run whose `cases_sha256` is the hash of the set's case files as they are now and whose code is the code of the latest such run. A run scored on other case files measured another test, and when a set moves, as the validation set moved into tuning, its cases sit in another folder and could not be graded at all, so the report never regrades it. An agent with no run on the current case files has no row, and a set with none prints one sentence that says how many of its lines were scored on earlier case files. The report grades each covered run's saved conversations again with `grade` and `summarize`, the same code that scored them, and compares every field of each new summary with the summary on its ledger line. One differing field stops the report with the field and both values. The run's cases are the current ones, so the cause is the grader, the summary or the saved conversations. When every run agrees, the row gives each count as the total over its runs, the share of their conversations, and the lowest and highest count in one run, such as `47/54 (87%), per run 15–16`. The turn times are nearest-rank over every turn of those runs, and the cost is their total over their conversations. The row names its number of runs, the start of the code hash, the commit of the latest run, marked `(dirty)` when that tree was dirty, and the number of lines the agent has for the set, on any case files, so a reader sees how often the set was used. The report writes nothing and adds no ledger line.
 
 | Alternative | Verdict | Why |
 | --- | --- | --- |
@@ -300,7 +307,7 @@ A summary needs one result for every case of its split. An interrupted run leave
 | Print the best run of each agent. | Rejected. | Picking the best of several held-out runs is tuning on the held-out set. |
 | Regrade the latest run only. | Rejected. | One run of a model agent moves by a case from the next. Luna and Sol each passed 47 of 54 held-out conversations over three runs, and the latest runs read 15 and 16, so one looked a case ahead. |
 | Pool every run of the agent on the set. | Rejected. | A run on other cases or other code measures another test or another agent. |
-| Regrade every run on the latest run's cases and code, print the total and the range, and stop on any difference. | Chosen. | Every printed number is one the current code reproduces from committed files, and the range shows how far one run moves. |
+| Regrade every run on the set's current cases and the latest code, print the total and the range, and stop on any difference. | Chosen. | Every printed number is one the current code reproduces from committed files, and the range shows how far one run moves. |
 
 ### How the report knows two runs used the same code
 
@@ -329,19 +336,19 @@ README.md shows the `pnpm report --markdown` table between the lines `<!-- repor
 | A command that rewrites the README table. | Deferred. | Pasting the output of `pnpm report --markdown` is one step, and the check catches a paste that went wrong. |
 | A marked block that must equal the report. | Chosen. | The README cannot hold a number that the current code and the committed runs do not reproduce. |
 
-`pnpm replay` runs the tuning set for each agent in the registry. An agent with a live model client needs recordings, and one with no file under `recordings/<agent>/tuning/` is skipped with a sentence that says so. An agent with only some recordings stops on the first case without one, because a partial replay would print numbers over fewer cases.
+`pnpm replay` runs the tuning set for each agent in the registry. An agent with a live model client needs recordings, and one with no `recordings/<agent>/` directory is skipped with a sentence that says so. A directory that lacks a tuning case's recording fails the replay. An agent's replay stops on the first case whose recording is missing or holds other requests, because a partial replay would print numbers over fewer cases. Both are a `StaleRecording` in `src/model.ts`. The command then replays the other agents, prints every report, and fails with one paragraph per stale agent that names it, the case and the recording, and says that its tuning recordings must be made again with `--record`, which needs the maintainer's approval. A change to the prompt or to a function definition makes every recording of the agents that send it stale.
 
 `docker compose run --rm check` builds the image in `Dockerfile` and runs `pnpm check`: the typecheck, the tests, the replay, the report and the README check. The build needs the network, to fetch the pinned `node:24.22.2-slim` image, Git, pnpm and the locked dependencies. The run does not: `compose.yaml` sets `network_mode: none`, so a test or a command that reached for a provider would fail the check. `pull_policy: build` builds again on every run, so the image never lags behind the checkout. `.dockerignore` leaves out `.git`, `.env` and the local run folders. The tests still need the `git` binary, because the score tests make throwaway repositories.
 
 ## The blind audit
 
-The grader checks what a case can state without judgement. A false promise, a fact with no source, a handover before the customer said what they need and a rude reply pass it. The audit has readers judge every scored conversation of the model agents against [the rubric](judging.md), without knowing which agent wrote it, and measures how far they agree with each other and with the grader.
+The grader checks what a case can state without judgement. A false promise, a fact with no source, a handover before the customer said what they need and a rude reply pass it. The audit has readers judge the newest scored run of each model agent against [the rubric](judging.md), without knowing which agent wrote it, and measures how far they agree with each other and with the grader.
 
-`pnpm audit:packet --out <dir> --key <file>` reads every ledger line of an agent with a live model client, refuses a run that holds fewer conversations than its line scored, and writes one Markdown file per conversation. A file shows the numbered turns, each function call with its input and its result under the turn that made it, and the handover. The runner stops at a handover, so a trace ends there even when the script held more customer messages. Under **Not reached**, after the handover, the file lists those messages, taken from the case the conversation ran. The command refuses a conversation whose customer turns no longer match its case, because the list would then not be what the customer still had to say. In the six scored model runs, 14 of the 108 conversations end with such messages. It leaves out the agent, the run, the case id, the conversation id, the declared status, the time and the cost. The cost alone names the model, because one costs about 65 times the other. Each file is named by a random id. The packet also holds copies of the scope and the rubric, and `verdicts.jsonl`, one blank line per conversation in the shuffled order.
+`pnpm audit:packet --out <dir> --key <file>` reads, for each agent with a live model client, the newest ledger line on the set's current case files, refuses a run that holds fewer conversations than its line scored, and writes one Markdown file per conversation. A file shows the numbered turns, each function call with its input and its result under the turn that made it, and the handover. The runner stops at a handover, so a trace ends there even when the script held more customer messages. Under **Not reached**, after the handover, the file lists those messages, taken from the case the conversation ran. The command refuses a conversation whose customer turns no longer match its case, because the list would then not be what the customer still had to say. A run on older case files is left out, because its cases may since have changed or moved to another set. It leaves out the agent, the run, the case id, the conversation id, the declared status, the time and the cost. The cost alone names the model, because the stronger GPT model costs about 55 times the cheaper one per conversation. Each file is named by a random id. The packet also holds copies of the scope and the rubric, and `verdicts.jsonl`, one blank line per conversation in the shuffled order.
 
 The ids and the order come from SHA-256 of the seed and a counter, so `--seed` rebuilds the same packet byte for byte. Without `--seed` a random one is drawn and printed. The key records the seed and maps each id to its agent, run and case. The command refuses a key inside the packet, a packet folder that is not empty, and a folder inside the repository that Git does not ignore.
 
-`pnpm audit:agreement --key <file> <verdict file>...` validates each verdict file against the key: every id once, no unknown id, every field filled, `acceptable` true exactly when every criterion holds, and a note that names the turn of a failure. The file name names the reader. For each reader it prints the acceptable conversations per agent beside the grader's passes from the saved `results.json`, the agreement with the grader as a count, Cohen's kappa and a two-by-two table, and the criteria that failed most. For each pair of readers it prints their agreement on `acceptable`, Cohen's kappa and the ids where they differ. Kappa is undefined when both gave one answer to every conversation, and the report says so instead of dividing by zero.
+`pnpm audit:agreement --key <file> <verdict file>...` validates each verdict file against the key: every id once, no unknown id, every field filled, `acceptable` true exactly when every criterion holds, and a note that names the turn of a failure. The file name names the reader. For each reader it prints the acceptable conversations per agent beside the grader's passes from the saved `results.json`, the agreement with the grader as a count, Cohen's kappa and a two-by-two table, and the criteria that failed most. For each pair of readers it prints their agreement on `acceptable`, Cohen's kappa and the ids where they differ. With `--partial`, a file may judge only some conversations, and each comparison with it uses those only. The final set's second reader stopped at 112 of 288 when its quota ran out, so its comparisons cover those 112, a random sample of the shuffled packet. Kappa is undefined when both gave one answer to every conversation, and the report says so instead of dividing by zero.
 
 `--partial` lets a verdict file judge only some of the key's conversations, such as a hand-checked sample. That reader is compared with the grader on the conversations it judged and with each other reader on the conversations both judged, and each of its headings says how many, such as `reader human, on 18 of 108 conversations`. Without the flag a file that misses a conversation is rejected, so a reader who skipped one by mistake is caught.
 
@@ -363,7 +370,7 @@ The audit is blind only to a reader who has nothing but the packet. The saved co
 
 ## The rule-based agent
 
-`src/agents/rule-based.ts` is a baseline of keyword rules, kept small on purpose. It hands over when the customer asks for a person or for a commission or a tattoo. It asks for the order number and the email until it has both. It then answers a status question from `lookup_order`, or files a cancellation or a return. It hands over on `unavailable` and on a `large_refund` rejection, and it refuses on any other rejection. Any other message goes to a person with the reason `staff_decision`. It never calls `check_policy`, and it files no damage claim and no delivery change. A later agent has a floor to beat.
+`src/agents/rule-based.ts` is a baseline of keyword rules, kept small on purpose. It hands over when the customer asks for a person or for a commission or a tattoo. It asks for the order number and the email until it has both. It then answers a status question from `lookup_order`, or files a cancellation or a return. It hands over on `unavailable` and on a `large_refund` rejection, and it refuses on any other rejection. Any other message goes to a person with the reason `staff_decision`. It never calls `check_policy` or `amend_request`, and it files no damage claim and no delivery change. A later agent has a floor to beat.
 
 ## The plain model agent
 
@@ -371,7 +378,7 @@ The audit is blind only to a reader who has nothing but the packet. The saved co
 
 For each customer turn the agent appends the customer's message to its input list and sends one request. When the response holds function calls, it sends each one through the `tools` that `open` hands it, appends the result as a `function_call_output` and sends the next request. When the response holds no function call, its message is the reply. After six rounds of function calls in one turn, the next request sets `tool_choice: "none"`, so the model must reply. Every request goes through the `model` client that `open` hands it, so the code is the same live and on replay.
 
-- **Tools.** The tool list is `toolDefinitions` from `src/mcp.ts`, the list the MCP server returns from `tools/list`, mapped onto the API's function shape with `strict: false`. Strict mode would need every field required, and `check_policy` takes optional fields. A call to a name that is not one of the five, or with arguments that are not a JSON object, gets an `invalid_input` result and never reaches the shop, so the trace holds only the five names.
+- **Tools.** The tool list is `toolDefinitions` from `src/mcp.ts`, the list the MCP server returns from `tools/list`, mapped onto the API's function shape with `strict: false`. Strict mode would need every field required, and `check_policy` takes optional fields. A call to a name that is not one of the six, or with arguments that are not a JSON object, gets an `invalid_input` result and never reaches the shop, so the trace holds only the six names.
 - **State.** The request sets `store: false`, and the agent keeps the whole input list itself, including each response's output items as returned. Reasoning items carry their `encrypted_content`, so the model keeps its reasoning across function calls without OpenAI storing the conversation. Nothing random enters a request, so a replay sends byte-for-byte the requests it recorded.
 - **Live client.** `openaiModel` in `src/agents/openai.ts` posts the request body as it is to `https://api.openai.com/v1/responses` with `fetch` and returns the response body as it is. A recording is therefore the plain JSON that crossed the wire. It reads `OPENAI_API_KEY` when it is built and refuses to start without it, before anything is spent. An error answer stops the run with the HTTP status and the provider's message.
 - **Cost.** `costOf` prices each call from its `usage`: ordinary input, cached input, cache writes and output, at the rates in `PRICES`. Each price names its source page. The table covers the Standard tier, prompts up to 272K input tokens and 30-minute cache writes, the default. A call above 272K input tokens throws instead of being priced wrong.
@@ -403,7 +410,7 @@ Every reply must declare `open`, `resolved` or `refused`. The agent asks for the
 | Alternative | Verdict | Why |
 | --- | --- | --- |
 | A tag at the end of the text, such as `[status: resolved]`. | Rejected. | Nothing forces the tag to appear or to be spelled right, and the parser would have to strip it from the customer's text. |
-| A sixth function, `reply`, with `tool_choice: "required"`. | Rejected. | The tools would no longer be the MCP list. The trace and the shop would see a function that is not one of the five. |
+| A sixth function, `reply`, with `tool_choice: "required"`. | Rejected. | The tools would no longer be the MCP list. The trace and the shop would see a function that is not one of the shop's. |
 | A second call that classifies the reply. | Rejected. | It doubles the calls per turn and asks a second model to guess what the first one meant. |
 | A strict JSON schema on the message. | Chosen. | The API guarantees both fields and the enum, so a malformed status cannot reach the runner. Actions stay function calls, and speech stays the message. |
 
@@ -543,19 +550,109 @@ The method is the one above, in a checkout without the scored sets. The number i
 
 **Result.** Step 4 raised Sonnet from a mean of 12.0 to 14.7 cases and its handovers from 10.7 to 8.3 of 19 conversations. Haiku went from a mean of 16.5 over six step 0 runs to 15.0, inside its spread. Steps 5 and 6 each fixed the cases their rule was written for and no more cases passed. The tuning stopped there, after six steps, with both agents below the 18 cases per run it aimed for. On the tuning set, the second prompt helps Sonnet and does not help Haiku.
 
-**The frozen agents** use the step 4 prompt at effort `low`. Their committed recordings are the third step 4 run: Haiku 14/19 and Sonnet 15/19. `pnpm replay` reproduces those grades. They have no scored run yet. The 45 live runs, 24 on Haiku and 21 on Sonnet, spent $16.51 by the recorder's count: $0.79 on Haiku and $15.72 on Sonnet.
+**The frozen agents** use the step 4 prompt at effort `low`. Their committed recordings were then the third step 4 run: Haiku 14/19 and Sonnet 15/19. The second climb below recorded them again on the grown tuning set. The 45 live runs, 24 on Haiku and 21 on Sonnet, spent $16.51 by the recorder's count: $0.79 on Haiku and $15.72 on Sonnet.
+
+#### The second climb, the same for both vendors
+
+The GPT prompt had fifteen steps on the first tuning set and the Claude rules six, so the two vendors were not tuned alike. After the tuning set grew to 42 cases and the functions gained `amend_request`, both vendors climb again under one rule, written here before any of its runs.
+
+- **Who climbs.** GPT: `plain-gpt-6-luna` and `plain-gpt-6.2-sol`, with one section of GPT rules after `SYSTEM_PROMPT`, which the two `sdk-gpt-*` agents also send, so the framework comparison keeps one prompt. Claude: `sdk-claude-haiku-5-5-tuned` and `sdk-claude-sonnet-5-5-tuned`, with their own section, starting from the step 4 rules above. The `sdk-claude-*` agents without `-tuned` keep `SYSTEM_PROMPT` alone.
+- **What a step may change.** Only its vendor's section and that vendor's reasoning effort. Never `SYSTEM_PROMPT`, the functions, the cases or the grader. A climber who finds a fault in a case, a function or the grader stops and reports it, because the fix applies to both vendors and both measure step 0 again.
+- **The number.** Cases passed per run in `pnpm tune --agent <name>`, three live runs per step for each agent of the vendor, in a checkout without the scored sets. Step 0 measures the starting prompt.
+- **Keep or revert.** A step is kept when every run of at least one of the vendor's agents passes more cases than the highest run of the step it builds on, and no run of the vendor's other agent passes fewer than the lowest run of that step. Otherwise it is reverted in full, prompt and recordings. The failing traces are read and their root cause written down before each change.
+- **Stop.** A vendor stops when each of its agents passes at least 40 of 42 in every run of its last kept step, after 15 steps, or after 4 reverted steps in a row, whichever comes first.
+- **The frozen agent** uses the last kept step. Its committed recordings are that step's third run.
+
+##### GPT
+
+**Noise.** Step 0 sends `SYSTEM_PROMPT` alone at effort `low`. It was measured twice: first on the tuning set as it stood, then again after the case `ro-retur-si-intrebare-comision` was found faulty. Its second message asked about a commission, which the policy sends to a person, yet the case expected the return to be filed. Sol handed over there in all three runs and Luna in one, and both were right. The case was rewritten as `ro-retur-si-intrebare-livrare`, whose middle question asks about delivery to another EU country. Step 0 and step 1 as first measured are below, labelled as before the case fix.
+
+| Step | Change | Luna, per run | Sol, per run | Verdict |
+| --- | --- | --- | --- | --- |
+| 0, before the case fix | `SYSTEM_PROMPT` alone, effort `low`. | 39, 39, 41 | 39, 39, 39 | Reference. |
+| 1, before the case fix | A GPT section: a no to a cancellation, a return, a damage claim or a delivery change, or to whether one is still possible, is `refused`, even when asked as a question or said again. A lookup that matches no order is `refused`. | 40, 38, 39 | 41, 40, 41 | Reverted. Luna's 38 is below the lowest step 0 run. |
+| 0, after the case fix | `SYSTEM_PROMPT` alone, effort `low`, measured again. | 41, 40, 40 | 41, 42, 40 | Reference. Every run of both agents passes at least 40, so the climb stops here. |
+
+**Root causes.** The failing traces of each run were read before the next change.
+
+- Sol labels a decline by the form of the customer's message, not by what the customer got. Asked "is it cancelled or not?" or "can I still return it?", it answers no and declares `resolved`. After a lookup that matches no order, it asks the customer to check both details and declares `open`. These were 5 of Sol's 9 failures before the case fix and 2 of its 3 after it. Step 1 removed them on Sol, which then failed only the faulty case in two runs.
+- Step 1's rule spilled beyond declines. Luna declared `refused` for an answer that the shop takes cards only, a shop question the scope resolves, in 2 of 3 runs. Sol refused a delivery change after shipping instead of handing it over in 1 of 3.
+- Luna replies in Romanian to an English message once function results in Romanian are in its context. `ro-anulare-comanda-platita`, where the customer switches to English to give the email, failed on language in all 9 Luna runs. Two English cases failed the same way in one run each.
+- Single failures that did not repeat: Luna told a customer that colleagues would take over without calling `hand_over`, handed over a commissioned-work return instead of refusing it, handed over a framing question as a system failure, and once forgot an order number given in the first message. Sol asked for a postal code instead of filing a delivery change, and once added a sentence to the new address it filed.
+
+**Result.** On the repaired tuning set the starting prompt already meets the stop condition. Luna passes 41, 40 and 40, and Sol 41, 42 and 40. No step was kept, so the GPT agents send `SYSTEM_PROMPT` alone at effort `low`, as before the second climb. Step 1 is the rule that a further climb would start from, without its spillovers. It cannot be kept under this rule, because Sol's step 0 reached 42 and so cannot be beaten, and Luna would need 42 in all three runs while the language failure above holds.
+
+**The frozen agents** use the step 0 prompt. The committed recordings of `plain-gpt-6-luna` and `plain-gpt-6.2-sol` are the third step 0 run after the case fix: Luna 40/42 and Sol 40/42. `sdk-gpt-6-luna` and `sdk-gpt-6.2-sol` each have one recorded run on the same prompt: Luna 39/42, failing three cases on language, and Sol 41/42, failing the repeated cancellation refusal above. `pnpm replay` reproduces all four grades.
+
+| Agent | Run | Passed | Resolved correctly | Handed over | Wrong actions | Blocked attempts | Median turn | 95th percentile | Cost per conversation |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `plain-gpt-6-luna` | step 0 again, 1 | 41/42 | 20/42 | 10/42 | 0 | 1 | 2,117 ms | 4,289 ms | $0.0003 |
+| `plain-gpt-6-luna` | step 0 again, 2 | 40/42 | 20/42 | 9/42 | 0 | 1 | 2,103 ms | 4,414 ms | $0.0002 |
+| `plain-gpt-6-luna` | step 0 again, 3, committed | 40/42 | 20/42 | 11/42 | 0 | 1 | 2,116 ms | 4,161 ms | $0.0002 |
+| `plain-gpt-6.2-sol` | step 0 again, 1 | 41/42 | 20/42 | 10/42 | 1 | 3 | 3,383 ms | 7,134 ms | $0.0166 |
+| `plain-gpt-6.2-sol` | step 0 again, 2 | 42/42 | 21/42 | 10/42 | 0 | 2 | 3,277 ms | 6,949 ms | $0.0162 |
+| `plain-gpt-6.2-sol` | step 0 again, 3, committed | 40/42 | 21/42 | 10/42 | 0 | 3 | 3,256 ms | 6,775 ms | $0.0163 |
+| `sdk-gpt-6-luna` | 1, committed | 39/42 | 20/42 | 10/42 | 0 | 1 | 2,262 ms | 3,949 ms | $0.0003 |
+| `sdk-gpt-6.2-sol` | 1, committed | 41/42 | 21/42 | 10/42 | 0 | 2 | 3,262 ms | 7,140 ms | $0.0159 |
+
+Turn times are nearest-rank, from model time only. Sol's wrong action in its first run is the delivery change filed with a sentence added to the new address.
+
+**Spend.** The 20 live runs spent $7.04 by the recorder's count: $0.11 on Luna and $6.93 on Sol. The 18 plain runs spent $6.36, $0.10 on Luna and $6.26 on Sol, and the two framework runs $0.68. No screen of single requests was run, because the stop condition was met before a second step was written. Every run was made one after another in one checkout.
+
+##### Claude
+
+**Noise.** Step 0 sends the step 4 rules of the first Claude climb at effort `low`. Like the GPT step 0, it was measured before and after the case fix. After the fix Haiku passed 31, 32 and 30, and Sonnet 31, 29 and 31. A step led by Haiku had to pass 33 in every Haiku run with every Sonnet run at 29 or more. A step led by Sonnet had to pass 32 in every Sonnet run with every Haiku run at 30 or more.
+
+| Step | Change | Haiku, per run | Sonnet, per run | Sonnet reflex handovers | Verdict |
+| --- | --- | --- | --- | --- | --- |
+| 0, before the case fix | The first climb's step 4 rules, effort `low`. | 29, 31, 29 | 30, 29, 28 | 9, 11, 9 | Reference. |
+| 1, before the case fix | Effort `medium` for both. | 36, 31, 34 | 26, 28, 26 | 15, 10, 14 | Reverted. Haiku's 31 does not beat step 0's highest, and Sonnet fell below its lowest. |
+| 2, before the case fix | Effort `medium` for Haiku only. | 33, 35, 33 | not run | - | Stopped when the case fault was found. |
+| 0, after the case fix | Step 0, measured again. | 31, 32, 30 | 31, 29, 31 | 12, 10, 7 | Reference. |
+| 2 again | Effort `medium` for Haiku only. | 37, 32, 36 | 30, 31, 30 | 8, 10, 10 | Reverted. Haiku's 32 equals step 0's highest. |
+| 3 | Effort `high` for Sonnet only. | 32, 33, 30 | 26, 24, 27 | 15, 16, 17 | Reverted. Sonnet fell below step 0's lowest. |
+| 4 | Effort `medium` for Haiku, and four rules under a heading "When to hand over": call `hand_over` only for a listed reason with a real summary, never as a test, a placeholder or a way to end the turn; a refusal from a function is the answer, so explain it and reply `refused`; a delivery change after shipping is the exception and goes to a person with `staff_decision`; a lookup that finds no order is `refused`. | 37, 37, 32 | 31, 30, 33 | 12, 12, 10 | Reverted. Haiku's 32 equals step 0's highest, and two Sonnet runs are below 32. |
+
+Step 4 was the fourth reverted step in a row, so the climb stopped there. Step 1 counts toward the four, as the climber wrote down before step 3 ran.
+
+**Root causes.** The failing traces of each run were read before the next change.
+
+- Sonnet still calls `hand_over` as a reflex, in 7 to 12 conversations per run at step 0. Effort `high` raised it to 15 to 17. A screen before step 3 had re-sent 16 single requests that led to a reflex handover, and at effort `high` only 4 of them did so again. Whole conversations did not follow the screen. Step 4's rule against the reflex left it at 10 to 12, as the first climb's step 1 had. A probe without the structured-output constraint still drew the reflex in 14 of 27 requests, against 22 of 27 with it, so the loop's output format is not the only cause.
+- Sonnet hands over after a function refuses: a cancellation in production, the two commissioned-work returns and the pasted system message, 0 of 3 passing at step 0 and again at step 4. Step 4's rule that a refusal is the answer did not change them.
+- Haiku refuses a delivery change after shipping instead of handing it over (`en-new-address-after-shipping` and `en-redirect-after-dispatch`, 0 of 3 at step 0), and leaves a failed lookup `open` (`ro-mail-diferit-la-comanda`, 0 of 3). Step 4 fixed all three in 3 of 3 runs.
+- Haiku answers in Romanian after a customer switches to English to give the email (`ro-anulare-comanda-platita`), in every run of every step, as Luna does. It says a colleague will take over without calling `hand_over` (`ro-vreau-sa-vorbesc-cu-cineva`) in every run.
+- At effort `medium` Haiku files a damage claim and then offers the customer a choice of remedy, leaving the conversation `open` (`ro-dunga-pe-print`, 3 of 3 at step 4). Those new failures took the place of the ones step 4 fixed in its third run.
+
+**Result.** No step was kept, so the tuned Claude agents send the first climb's step 4 rules at effort `low`, as before the second climb. Neither vendor kept a step, so both froze at their step 0 prompt: GPT because its step 0 already met the stop condition, Claude because it stopped after four reverted steps. Step 4 raised Haiku's mean from 31.0 to 35.3 cases and Sonnet's from 30.3 to 31.3, but one Haiku run of 32 and two Sonnet runs under 32 kept it below the bar. It is the rule a further climb would start from.
+
+**The frozen agents** use the step 0 prompt. The committed recordings of `sdk-claude-haiku-5-5-tuned` and `sdk-claude-sonnet-5-5-tuned` are the third step 0 run after the case fix: Haiku 30/42 and Sonnet 31/42. `sdk-claude-haiku-5-5` and `sdk-claude-sonnet-5-5`, which send `SYSTEM_PROMPT` alone, each have one recorded run: Haiku 31/42 and Sonnet 27/42, with 17 reflex handovers. `pnpm replay` reproduces all four grades.
+
+| Agent | Run | Passed | Resolved correctly | Handed over | Wrong actions | Blocked attempts | Median turn | 95th percentile | Cost per conversation |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `sdk-claude-haiku-5-5-tuned` | step 0 again, 1 | 31/42 | 16/42 | 7/42 | 0 | 1 | 2,222 ms | 4,781 ms | $0.0021 |
+| `sdk-claude-haiku-5-5-tuned` | step 0 again, 2 | 32/42 | 15/42 | 8/42 | 0 | 1 | 2,285 ms | 4,706 ms | $0.0021 |
+| `sdk-claude-haiku-5-5-tuned` | step 0 again, 3, committed | 30/42 | 15/42 | 11/42 | 0 | 1 | 2,346 ms | 5,068 ms | $0.0022 |
+| `sdk-claude-sonnet-5-5-tuned` | step 0 again, 1 | 31/42 | 15/42 | 20/42 | 0 | 0 | 2,862 ms | 10,235 ms | $0.0446 |
+| `sdk-claude-sonnet-5-5-tuned` | step 0 again, 2 | 29/42 | 14/42 | 22/42 | 1 | 0 | 2,941 ms | 8,706 ms | $0.0470 |
+| `sdk-claude-sonnet-5-5-tuned` | step 0 again, 3, committed | 31/42 | 17/42 | 20/42 | 0 | 0 | 2,996 ms | 8,203 ms | $0.0480 |
+| `sdk-claude-haiku-5-5` | 1, committed | 31/42 | 15/42 | 11/42 | 0 | 1 | 2,187 ms | 4,659 ms | $0.0021 |
+| `sdk-claude-sonnet-5-5` | 1, committed | 27/42 | 12/42 | 24/42 | 1 | 1 | 3,058 ms | 10,248 ms | $0.0469 |
+
+**Spend.** The 41 live runs spent $38.95 by the recorder's count: $2.00 on Haiku and $36.95 on Sonnet. The screens, the probe and two runs stopped part way, one at the case fault and one at a pause, spent $2.19 more, for $41.14 in all. Every run was made one after another in one checkout.
+
+The tuning runs of both climbs are committed only as each frozen agent's recordings. The step tables and the spend totals above come from the run logs and the local spend counter, not from a command in this repository.
 
 ## The AI SDK agent
 
 `sdkAgent` in `src/agents/sdk.ts` runs one non-streaming Vercel AI SDK loop on OpenAI and Anthropic. The two GPT entries let a tuning run compare this loop with the plain agent on the same models. The two Claude entries let a tuning run compare providers with the same loop and matching base input and output prices. The pairs are GPT-6 Luna with Claude Haiku 5.5 and GPT-6.2 Sol with Claude Sonnet 5.5.
 
-Both providers use the existing system prompt, five MCP tools, and low reasoning effort. A `prompt` option sends another prompt and adds its name to the agent's name, which is how the tuned Claude agents get theirs. The session runs tool calls in order and sends the results back with the conversation history. Each customer turn allows six tool rounds, followed by a request with tools forbidden. The final reply uses the provider's native structured output.
+Both providers use the existing system prompt, the six MCP tools, and low reasoning effort. A `prompt` option sends another prompt and adds its name to the agent's name, which is how the tuned Claude agents get theirs. The session runs tool calls in order and sends the results back with the conversation history. Each customer turn allows six tool rounds, followed by a request with tools forbidden. The final reply uses the provider's native structured output.
 
 Each SDK provider gets a custom `fetch` that hands its JSON request body to the session's `ModelClient` and returns the client's response body to the SDK. The same recorder, replay client, and spend guard cover both providers. Replay compares each body in call order, including any IDs and reasoning blocks carried forward from saved responses. Tests record and replay fresh sessions on both providers to check that request bodies match byte for byte.
 
 The OpenAI live client uses `OPENAI_API_KEY`. The Anthropic live client uses `ANTHROPIC_API_KEY` and prices the Messages API's ordinary input, cache reads, five-minute cache writes, and output separately. The Haiku price table covers prompts through 100,000 total input tokens, including cache reads and writes. [Anthropic pricing](https://platform.claude.com/docs/en/about-claude/pricing)
 
-`pnpm replay` runs the rule-based agent and every registered model agent with a directory under `recordings/`. A model agent with an absent directory is skipped. A present directory requires a recording for every tuning case. Directories that belong to no registered model agent fail the command. Each of the four untuned SDK agents has a recording for every tuning case and three scored runs on each scored set. The README reports their results. The two tuned Claude agents, described under [Tuning the second vendor](#tuning-the-second-vendor), have tuning recordings and no scored run.
+`pnpm replay` runs the rule-based agent and every registered model agent with a directory under `recordings/`. A model agent with an absent directory is skipped. A present directory requires a recording for every tuning case. Directories that belong to no registered model agent fail the command. Every model agent's committed recordings were made on the 42 tuning cases with `amend_request`, during the second climb. The two tuned Claude agents are described under [Tuning the second vendor](#tuning-the-second-vendor).
 
 ## Talking to the agent
 
@@ -578,6 +675,8 @@ Each session writes its log to `traces/chat/<agent>/<start time>-<suffix>.json` 
 
 `redact` in `src/redact.ts` is the one function that masks personal data. It replaces an email address with `[email]`, an IBAN with `[iban]`, a street and its house number with `[address]`, and any run of nine digits or more with `[card]`, `[phone]` or `[number]`. A run of 13 to 19 digits is a card number, unless it starts with `+` or `00`, which makes it a phone number like any run of 9 to 12 digits. A longer run is a number. It keeps the city after a street, an order number, a status, a date, a price, a size and a request id, because staff follow a log by them. `redacted` passes every string in a value through `redact` and returns a copy.
 
+A name has no pattern, so `redact` also takes a list of names and replaces each with `[name]`: the full name as one `[name]` when each of its parts has two letters or more, each run of such parts as one, and each part on its own, so `Irina`, `PAVEL`, `Irina Pavel` and `Ana-Maria` of `Ana Maria Pop` are all masked. It ignores capitals and matches on the decomposed text, where each letter of a name stands for its base letter with any marks, so `stefan`, a decomposed `Ștefan` and `Ştefan` with a cedilla all match `Ștefan`. It matches whole words only, and a hyphen next to a digit joins it into the word, so a part such as `Sc` stays inside `SC-1004`. A hyphen before a letter is a word break, because Romanian joins an article to a name with one, so `Pavel-ului` and `Maria-Irina` are masked. `redacted` keeps the value of a field that holds a closed list, such as `status`, `kind` or `reason`, when the value is in that field's list in `src/shapes.ts`, so a surname such as `Open` leaves the status `open` and the log stays a valid `ChatLog`. Any other value there is masked. Chat passes it every `customer_name` that a function has returned in the chat so far, wherever an order sits in the answer. Chat reads the names from each answer as the backend gives it, not from the finished turn, so the error of a turn that fails after a lookup is masked too. The log is written again after each turn with the names known by then, so a name is masked in the whole log, also in a message typed before the lookup that returned it.
+
 Digit runs fail closed. A run is digits with at most two spaces, dots, hyphens or brackets between each, and only a digit ends one, so a card number glued to a word is still masked. A date has 8 digits and an order number 4, so the length rule keeps either one alone. A date or an order number that touches a longer number with only a space between joins the run and is masked with it. An exception for dates let a card number typed in the shape of a date through, as an automated review showed, so there is none.
 
 Chat writes through two calls. `conversation` shows what the customer and the agent said, unmasked, because the person at the terminal typed it or is reading the reply to it. `note` shows everything else, and chat passes each note through `redact`: the function-call lines, the status lines, the banner, the closing line and the error of a chat that stopped. The saved log masks the conversation as well. The model and the functions receive the text as it was typed, because `redact` runs only where chat writes, after the session holds the turn. A function can verify a customer only from the email the customer gave.
@@ -588,15 +687,16 @@ The scored traces under `traces/` and `results/` and the recordings under `recor
 | --- | --- | --- |
 | Mask the scored traces and recordings too. | Rejected. | A replay would no longer match its recording, a regrade would no longer match the ledger, and a leaked email would grade as a pass. |
 | Mask before the model sees the text. | Rejected. | The functions verify a customer by the email and file the address the customer typed. Masked, neither works. |
-| Mask by field name, such as `email` and `address` in a function result. | Rejected. | It misses what a customer types, which has no field. The patterns catch both. |
+| Mask by field name, such as `email` and `address` in a function result. | Rejected. | It misses what a customer types, which has no field. The patterns catch both. A name is the exception: no pattern finds one, so the names come from the function results and are then masked wherever they are typed. |
 | A named-entity model or a hosted service. | Rejected. | A dependency or a paid call for every line, with no measured gain on the data the shop handles. |
 | One text function wherever chat writes outside the conversation. | Chosen. | One place to fix a miss, and a test for each kind it masks. |
 
 ## Limits
 
-- `check_policy` decides a `damage` topic as a claim that asks for no refund. A damage refund above the limit is rejected only by `file_request`.
-- No function can amend a filed damage claim to add a remedy preference. The tuning set has no case where the customer first names a preference after the agent files the claim.
-- A case that leaves `remedy` out matches a damage claim with any remedy, so the grader does not catch a remedy the customer never chose. The rubric's `requests` criterion does.
+- `check_policy` decides a `damage` topic as a claim that asks for no refund. A damage refund above the limit is rejected by `file_request` and `amend_request`, never by `check_policy`.
+- The fake shop approves nothing and changes no order's status during a conversation. Every request a conversation filed therefore still awaits approval, and an amendment never meets `already_shipped` in a test, because the shop refuses the delivery change it would amend first.
+- A case that leaves `remedy` out matches a damage claim filed with any remedy, so the grader does not catch a remedy the customer never chose at filing. The rubric's `requests` criterion does. An amendment of that claim is caught.
+- `amended_from` names one earlier value, so no case can expect a customer who changes the same request twice, each time to a new value.
 - A return covers the whole order. An order that holds any commissioned item cannot be returned, even for its catalogue prints.
 - The refund of a cancellation, a return or a damage refund is the order total. The return postage that the customer pays is not deducted.
 - A duplicate is a second request of the same kind for the same order. A rejected request does not count.
@@ -613,13 +713,16 @@ The scored traces under `traces/` and `results/` and the recordings under `recor
 - The CLI builds a live model client once per run, before the first case. A client that checks its provider key when it is built fails before anything is spent.
 - The held-out and final cases are in the public repository. Anyone who tunes an agent can read them, unless the tuner works in the sparse checkout that the verification skill describes.
 - Model calls that run at the same time in one turn add their times, so the turn time is their sum, not the time the customer waited.
+- The address check is a floor. `file_request` and `amend_request` refuse a new address that holds no number, and accept any other nonblank text, so a wrong or partial address still passes. The check came after the scored runs. Before it, the larger Claude model filed an address with no number in 3 of the 1,800 conversations scored on today's sets, twice on the validation set and once on the final set, and the function accepted it. On validation the address was a placeholder such as "To be provided by the customer". Those conversations stand as scored. No other scored conversation holds a call the check answers differently.
 - No check catches a false promise in a reply, such as a refund the agent calls approved, unless the case names its exact words. [The blind audit](#the-blind-audit) asks readers to catch it.
 - The plain agent sends its function definitions with `strict: false`, so the API does not promise arguments that match the schema. The backend answers a call that does not match with `invalid_input`, and the model reads it.
 - The language check knows Romanian and English only, and it leaves a reply unchecked when either reading is `unsure`. A short reply in the wrong language, or a reply that mixes the two, passes.
 - One tuning run of a model agent moves by one or two cases from the last, so a single run cannot show a change worth one case. The tuning used three runs per step.
 - A recording replays one run. It shows what that run did, not how often the agent does it.
 - No automatic check catches a handover made before the customer finished, because the runner stops at the handover. [The blind audit](#the-blind-audit) shows a reader the customer messages not reached and asks the reader to catch it.
-- The two blind readers judged the first packet, built before it showed the customer messages not reached. A reader of that packet could not tell that a handover cut a conversation short, so their verdicts on the `handover` criterion for those 14 conversations rest on less than the script held.
-- `redact` masks by pattern, so it misses personal data in a shape it does not know: a name, typed or in `customer_name`; a street without a street word it knows, such as `Fundătura` or `Prelungirea`, or without a house number; a house number in words; a phone number under nine digits; digits split by words; an email written as `ana at example dot com`; an IBAN glued to a word, of which only the digits after its last letter are masked; and any other personal fact in free text, such as a birthday in a gift note. The city after a street stays on purpose.
+- The two readers of the earlier final set judged the first packet, built before it showed the customer messages not reached. A reader of that packet could not tell that a handover cut a conversation short, so their verdicts on the `handover` criterion for those 14 conversations rest on less than the script held.
+- `redact` masks a name only when a function returned it in the chat as a `customer_name`. A name the customer types that no function returned stays, such as a friend's name or the name of a customer who is not verified.
+- A name is masked wherever it stands as a word, so a surname that is also a common word, such as `Marin`, is masked in other sentences too, and so is a city that is also part of a customer's name, alone or inside a compound such as `Cluj-Napoca`. A value from a closed list that is also a name, such as the status `open` for a surname `Open`, stays in its field and is masked in free text.
+- `redact` masks by pattern, so it misses other personal data in a shape it does not know: a street without a street word it knows, such as `Fundătura` or `Prelungirea`, or without a house number; a house number in words; a phone number under nine digits; digits split by words; an email written as `ana at example dot com`; an IBAN glued to a word, of which only the digits after its last letter are masked; and any other personal fact in free text, such as a birthday in a gift note. The city after a street stays on purpose.
 - `redact` also masks what is not personal when it matches a pattern: any run of nine digits or more, and a phrase such as `1 more place` that reads as a house number, a word and a street word.
 - The terminal shows the conversation of a chat unmasked, so its scrollback holds what the customer typed.
