@@ -239,6 +239,28 @@ test.each([
   expect(await tools.call(name, input)).toMatchObject({ ok: false, error: { code: "invalid_input" } });
 });
 
+test.each(["To be provided by the customer", "Strada Exemplu, Brașov"])(
+  "a delivery change to %j, which holds no number, answers invalid_input and files nothing",
+  async (new_address) => {
+    const tools = await testBackend();
+
+    const refused = await tools.call("file_request", request("SC-1001", { kind: "delivery_change", new_address }));
+    const filed = await tools.call("file_request", request("SC-1001", { kind: "delivery_change", new_address: "Str. Exemplu 8, Brașov" }));
+
+    expect(refused).toMatchObject({ ok: false, error: { code: "invalid_input", message: expect.stringContaining("street number") } });
+    expect(filed).toEqual({ ok: true, data: { request_id: "R-1", status: "pending_approval" } });
+  },
+);
+
+test("an amendment to an address that holds no number answers invalid_input", async () => {
+  const tools = await testBackend();
+  await tools.call("file_request", request("SC-1001", { kind: "delivery_change", new_address: "Str. Exemplu 5, Iași" }));
+
+  const refused = await tools.call("amend_request", amend("SC-1001", "R-1", { kind: "delivery_change", new_address: "To be confirmed" }));
+
+  expect(refused).toMatchObject({ ok: false, error: { code: "invalid_input", message: expect.stringContaining("street number") } });
+});
+
 test.each(["lookup_order", "lookup_account", "check_policy", "file_request", "amend_request"] as const)(
   "during an outage %s answers unavailable",
   async (name) => {
